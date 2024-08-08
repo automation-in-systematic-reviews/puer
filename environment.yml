@@ -1,0 +1,20 @@
+name: asq-api
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.8
+  # main
+  - requests
+  - pydantic
+  - fastapi
+  - pandas
+  - numpy
+  - pytest
+  - environs
+  - huggingface
+  - sentence-bert
+  # dev utils
+  - black
+  - flake8
+  - pip
