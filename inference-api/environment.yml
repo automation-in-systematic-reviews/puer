@@ -1,9 +1,11 @@
-name: asq-api
+name: inference-api
 channels:
   - conda-forge
+  - pytorch
   - defaults
 dependencies:
   - python=3.8
+  - git-lfs
   # main
   - requests
   - pydantic
@@ -12,9 +14,11 @@ dependencies:
   - numpy
   - pytest
   - environs
-  - huggingface
-  - sentence-bert
-  # dev utils
+  - protobuf
+  - pytorch:pytorch
+  - conda-forge:transformers
+  - sentence-transformers
+  # other python utils
   - black
   - flake8
   - pip

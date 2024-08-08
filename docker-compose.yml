@@ -1,0 +1,11 @@
+services:
+  inference-api:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: bash -c "make run"
+    ports:
+      - ${INFERENCE_API_PORT:-12306}:80
+    volumes:
+      - ./inference-api:/inference-api
