@@ -8,7 +8,7 @@ and also git-lfs (e.g. `brew install git-lfs` and then `git lfs install`).
 Clone the repository.
 Then go to `inference-api/inference-api/models` 
 (where the first `inference-api` is the root directory of the local repo),
-and clone the `textattack/albert-base-v2-imdb` from Huggingface.
+and clone the `textattack/albert-base-v2-imdb` model (`git clone https://huggingface.co/textattack/albert-base-v2-imdb`) from Huggingface.
 
 Go back to root `inference-api` and run `docker-compose build` to build the docker image(s).
 
