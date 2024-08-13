@@ -26,6 +26,8 @@ init time of transformer model loading is non-trivial.
 When the service session is running in a terminal session, open up another terminal session and run 
 `docker-compose exec -it inference-api bash` and you will be inside the running docker container.
 
+Run `make test` will trigger unit test using pytest.
+
 Run `make fmt` will trigger autoformat of the codebase using black.
 
 Run `make lint` will trigger linting of the codebase using flake8.

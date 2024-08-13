@@ -31,7 +31,7 @@ async def root():
 
 
 @app.get("/check")
-async def check():
+async def check() -> bool:
     res = globals.path_to_albert_imdb.exists()
     return res
 

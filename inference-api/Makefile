@@ -14,13 +14,17 @@ run:
 
 ## ==== codebase ====
 
+## unit test
+test:
+	python -m pytest -vv
+
 ## Format codebase
 fmt:
-	python -m black app
+	python -m black app tests
 
 ## Format codebase
 lint:
-	python -m flake8 app
+	python -m flake8 app tests
 
 #################################################################################
 # Self Documenting Commands                                                     #
