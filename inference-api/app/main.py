@@ -32,8 +32,13 @@ async def root():
 
 
 @app.get("/check")
+<<<<<<< HEAD
 async def check():
     res = globals.path_to_study_screening.exists()
+=======
+async def check() -> bool:
+    res = globals.path_to_albert_imdb.exists()
+>>>>>>> 4551c53a97bb514756bf44dfeda95a54359adde1
     return res
 
 
