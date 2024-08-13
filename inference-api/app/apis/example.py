@@ -2,7 +2,7 @@ from typing import List, Optional
 
 import torch
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.resources import globals
 
@@ -15,6 +15,15 @@ class ExampleInputBatch(BaseModel):
     example_record: List[ExampleInputRecord]
     param1: Optional[str]
     param2: Optional[str]
+
+    @field_validator("example_record")
+    def num_example_record_limit(cls, v):
+        # https://docs.pydantic.dev/latest/concepts/validators/#field-validators
+        num_limit = 2
+        print(len(v))
+        if len(v) > num_limit:
+            raise ValueError(f"number of records must not exceed {num_limit}")
+        return v
 
 
 ExampleOutputBatch = List[str]
