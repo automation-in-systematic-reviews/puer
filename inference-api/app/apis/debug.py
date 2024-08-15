@@ -45,7 +45,7 @@ def example_encode_inference(text: str, tokenizer, model) -> str:
 router = APIRouter()
 
 
-@router.post("/example/encode")
+@router.post("/debug/encode")
 async def post_encode(payload: ExampleInputBatch) -> ExampleOutputBatch:
     # example taken from
     # https://huggingface.co/docs/transformers/model_doc/albert#transformers.AlbertForSequenceClassification

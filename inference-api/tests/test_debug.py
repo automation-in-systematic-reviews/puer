@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 
-def test_example_encode():
+def test_debug_encode():
     with TestClient(app) as client:
         input_payload = {
             "example_record": [
@@ -13,12 +13,12 @@ def test_example_encode():
             "param1": None,
             "param2": None,
         }
-        r = client.post("/example/encode", json=input_payload)
+        r = client.post("/debug/encode", json=input_payload)
         assert r.status_code == 200
         assert r.json()
 
 
-def test_example_encode_limit():
+def test_debug_encode_limit():
     with TestClient(app) as client:
         input_payload = {
             "example_record": [
@@ -29,5 +29,5 @@ def test_example_encode_limit():
             "param1": None,
             "param2": None,
         }
-        r = client.post("/example/encode", json=input_payload)
+        r = client.post("/debug/encode", json=input_payload)
         assert r.status_code == 422  # Unprocessable Entity
