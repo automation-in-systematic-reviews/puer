@@ -4,7 +4,6 @@ from pydantic import BaseModel
 import numpy as np
 from numpy.linalg import norm
 
-from app.resources import globals
 from app.funcs.threshold import read_thresholds, threshold_to_binary_labels
 from app.resources import globals
 
@@ -40,8 +39,7 @@ async def post_encode(payload: PayloadModel):
     cosine = np.dot(q_e, s_e) / (norm(q_e) * norm(s_e))
     print("Cosine Similarity:\n", cosine)
 
-    threshold = read_thresholds(globals.path_to_thresholds, payload.review_topic, payload.strategy)
-    decision = threshold_to_binary_labels([cosine], threshold)
+    decision = threshold_to_binary_labels([cosine], globals.threshold)
     print(decision)
 
     return decision
