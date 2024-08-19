@@ -4,6 +4,7 @@ import transformers
 from sentence_transformers import SentenceTransformer
 from fastapi import FastAPI
 
+from app.funcs.threshold import read_thresholds
 from app.resources import globals
 from app.apis import debug, study_screening
 
@@ -15,15 +16,13 @@ async def lifespan(app: FastAPI):
             globals.paths["albert_imdb"]
         ),
         "model": transformers.AlbertForSequenceClassification.from_pretrained(
-            globals.path["albert_imdb"]
+            globals.paths["albert_imdb"]
         ),
     }
     globals.models["study_screening"] = {
-        "model": SentenceTransformer(
-            str(globals.paths["study_screening"])
-        ),
+        "model": SentenceTransformer(str(globals.paths["study_screening"])),
     }
-    globals.threshold = read_thresholds(globals.paths["thresholds"], payload.review_topic, payload.strategy)
+    globals.thresholds = read_thresholds(globals.paths["thresholds"])
     print("api initialization done.")
     yield
     globals.models.clear()

@@ -1,10 +1,9 @@
-import torch
 from fastapi import APIRouter
 from pydantic import BaseModel
 import numpy as np
 from numpy.linalg import norm
 
-from app.funcs.threshold import read_thresholds, threshold_to_binary_labels
+from app.funcs.threshold import select_threshold, threshold_to_binary_labels
 from app.resources import globals
 
 
@@ -24,12 +23,12 @@ async def post_encode(payload: PayloadModel):
 
     model = globals.models["study_screening"]["model"]
 
-    study = 'Title: ' + payload.study_title + '. Abstract: ' + payload.study_abstract
+    study = "Title: " + payload.study_title + ". Abstract: " + payload.study_abstract
 
     if payload.criteria:
-        query = 'Topic: ' + payload.review_topic + '. Criteria: ' + payload.criteria
+        query = "Topic: " + payload.review_topic + ". Criteria: " + payload.criteria
     else:
-        query = 'Topic: ' + payload.review_topic + '.'
+        query = "Topic: " + payload.review_topic + "."
     print(query)
     print(study)
 
@@ -38,8 +37,10 @@ async def post_encode(payload: PayloadModel):
     s_e = model.encode(study, convert_to_numpy=True)
     cosine = np.dot(q_e, s_e) / (norm(q_e) * norm(s_e))
     print("Cosine Similarity:\n", cosine)
-
-    decision = threshold_to_binary_labels([cosine], globals.threshold)
+    threshold = select_threshold(
+        globals.thresholds, payload.review_topic, payload.strategy
+    )
+    decision = threshold_to_binary_labels([cosine], threshold)
     print(decision)
 
-    return decision
+    return cosine.item(), decision[0]
