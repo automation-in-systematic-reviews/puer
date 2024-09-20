@@ -8,12 +8,18 @@ def read_thresholds(threshold_path):
 
 def select_threshold(thresholds, topic, strategy):
     topics = thresholds["topic"].tolist()
+    strategies = thresholds["strategy"].tolist()
     key = topic.split(" ")[0]
     if key in topics:
-        row = thresholds.loc[
-            (thresholds["topic"] == key) & (thresholds["strategy"] == strategy)
-        ]
-        threshold = row["threshold"].values[0]
+        if strategy in strategies:
+            row = thresholds.loc[
+                (thresholds["topic"] == key) & (thresholds["strategy"] == strategy)
+            ]
+            threshold = row["threshold"].values[0]
+        else:
+            print("strategies not found, using the default threshold = 0.5")
+            threshold = 0.5
+
     else:
         print("topic not found, using the default threshold = 0.5")
         threshold = 0.5

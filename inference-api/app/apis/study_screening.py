@@ -36,11 +36,12 @@ async def post_encode(payload: PayloadModel):
     # q_e = q_e.reshape(1, 768)
     s_e = model.encode(study, convert_to_numpy=True)
     cosine = np.dot(q_e, s_e) / (norm(q_e) * norm(s_e))
-    print("Cosine Similarity:\n", cosine)
+    print("Cosine Similarity:", cosine)
     threshold = select_threshold(
         globals.thresholds, payload.review_topic, payload.strategy
     )
     decision = threshold_to_binary_labels([cosine], threshold)
     print(decision)
 
+    # return 1.0, 'included'
     return cosine.item(), decision[0]

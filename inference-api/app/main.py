@@ -39,11 +39,11 @@ async def root():
 @app.get("/check")
 async def check() -> bool:
     path_exist_list = []
-    for k, v in globals.paths:
+    for k, v in globals.paths.items():
         path_exist = v.exists()
         print(f"{k}, {path_exist}")
         path_exist_list.append(path_exist)
-    res = sum(path_exist_list) == len(path_exist)
+    res = sum(path_exist_list) == len(path_exist_list)
 
     return res
 
