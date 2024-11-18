@@ -1,12 +1,14 @@
-# Template for the inference api
+# PU'ER
+
+**P**U'ER **U**tilities for **E**nhancing systematic **R**eviews
 
 ## Setting up (for local development)
 
-First install docker (e.g. `brew install --cask docker`) 
+First install docker (e.g. `brew install --cask docker`)
 and also git-lfs (e.g. `brew install git-lfs` and then `git lfs install`).
 
 Clone the repository.
-Then go to `inference-api/inference-api/models` 
+Then go to `inference-api/inference-api/models`
 (where the first `inference-api` is the root directory of the local repo),
 and clone the `textattack/albert-base-v2-imdb` model (`git clone https://huggingface.co/textattack/albert-base-v2-imdb`) from Huggingface.
 
@@ -23,7 +25,7 @@ By default the `inference-api` directory is watched for changes from the running
 So any changes in the code will trigger the fastapi service to rerun -- be careful when to do this as
 init time of transformer model loading is non-trivial.
 
-When the service session is running in a terminal session, open up another terminal session and run 
+When the service session is running in a terminal session, open up another terminal session and run
 `docker-compose exec -it inference-api bash` and you will be inside the running docker container.
 
 Run `make test` will trigger unit test using pytest.
