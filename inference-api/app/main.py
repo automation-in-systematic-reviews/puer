@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 import transformers
 from sentence_transformers import SentenceTransformer
 from fastapi import FastAPI
+from loguru import logger
 
 from app.funcs.threshold import read_thresholds
 from app.resources import globals
@@ -11,6 +12,9 @@ from app.apis import debug, study_screening
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("api config info")
+    logger.info(f"api_keys: {globals.api_keys}")
+    logger.info("api init: init models")
     globals.models["albert-imdb"] = {
         "tokenizer": transformers.AutoTokenizer.from_pretrained(
             globals.paths["albert_imdb"]
@@ -23,7 +27,7 @@ async def lifespan(app: FastAPI):
         "model": SentenceTransformer(str(globals.paths["study_screening"])),
     }
     globals.thresholds = read_thresholds(globals.paths["thresholds"])
-    print("api initialization done.")
+    logger.info("api initialization done.")
     yield
     globals.models.clear()
 

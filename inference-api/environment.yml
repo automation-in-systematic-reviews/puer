@@ -4,7 +4,8 @@ channels:
   - pytorch
   - defaults
 dependencies:
-  - python=3.8
+  # - python=3.8
+  - python=3.10
   - git-lfs
   # main
   - requests
@@ -14,9 +15,12 @@ dependencies:
   - numpy
   - pytest
   - environs
+  - loguru
+  # main, pytorch and llm things
   - protobuf
   - pytorch:pytorch
   - conda-forge:transformers
+  - sentencepiece
   - sentence-transformers
   # other python utils
   - black
