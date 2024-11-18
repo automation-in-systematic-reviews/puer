@@ -25,4 +25,5 @@ dependencies:
   # other python utils
   - black
   - flake8
+  - isort
   - pip

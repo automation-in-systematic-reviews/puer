@@ -21,6 +21,7 @@ test:
 ## Format codebase
 fmt:
 	python -m black app tests
+	python -m isort app tests
 
 ## Format codebase
 lint:
