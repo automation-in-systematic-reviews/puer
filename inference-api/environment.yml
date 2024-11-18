@@ -19,11 +19,15 @@ dependencies:
   # main, pytorch and llm things
   - protobuf
   - pytorch:pytorch
-  - conda-forge:transformers
-  - sentencepiece
-  - sentence-transformers
+  # - conda-forge:transformers
+  # - sentencepiece
+  # - sentence-transformers
   # other python utils
   - black
   - flake8
   - isort
   - pip
+  - pip:
+      - transformers
+      - sentencepiece
+      - sentence-transformers
