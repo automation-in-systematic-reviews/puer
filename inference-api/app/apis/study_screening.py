@@ -1,15 +1,18 @@
-from fastapi import APIRouter
-from pydantic import BaseModel
+from typing import Optional
+
 import numpy as np
+from fastapi import APIRouter, Depends
 from numpy.linalg import norm
+from pydantic import BaseModel
 
 from app.funcs.threshold import select_threshold, threshold_to_binary_labels
 from app.resources import globals
+from app.resources.security import api_key_auth
 
 
 class PayloadModel(BaseModel):
     review_topic: str
-    criteria: str
+    criteria: Optional[str] = None
     study_title: str
     study_abstract: str
     strategy: str
@@ -18,7 +21,8 @@ class PayloadModel(BaseModel):
 router = APIRouter()
 
 
-@router.post("/study_screening/encode")
+# @router.post("/study_screening/encode")
+@router.post("/study_screening/encode", dependencies=[Depends(api_key_auth)])
 async def post_encode(payload: PayloadModel):
 
     model = globals.models["study_screening"]["model"]
