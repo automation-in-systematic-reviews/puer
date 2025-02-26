@@ -30,9 +30,9 @@ async def post_encode(payload: PayloadModel):
     study = "Title: " + payload.study_title + ". Abstract: " + payload.study_abstract
 
     if payload.criteria:
-        query = "Topic: " + payload.review_topic + ". Criteria: " + payload.criteria
+        query = "Query: " + payload.review_topic + ". Criteria: " + payload.criteria
     else:
-        query = "Topic: " + payload.review_topic + "."
+        query = "Query: " + payload.review_topic + "."
     print(query)
     print(study)
 
