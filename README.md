@@ -18,7 +18,6 @@ Run `docker-compose up` and you should see the service(s) running in the termina
 
 Now from a web browser go to `http://localhost:12306/docs` you should see a fastapi web service.
 
-
 ## How to use for development
 
 By default the `inference-api` directory is watched for changes from the running session for hot reload.
@@ -34,7 +33,6 @@ Run `make fmt` will trigger autoformat of the codebase using black.
 
 Run `make lint` will trigger linting of the codebase using flake8.
 
-
 ## Deployment
 
 Do everything from the setting up section before the `docker-compose up` step.
@@ -42,7 +40,21 @@ Run `docker-compose up -d` instead.
 
 ## Other technical details
 
+### General
+
 - The [conda environment](./inference-api/environment.yml) is created from micromamba
-- [Makefile](./inference-api/Makefile) should be used for inferfacing with the code infrastructure
+- [Makefile](./inference-api/Makefile) should be used for interfacing with the code infrastructure
 - Inside the docker image / container, the working directory is `/inference-api`
 - docs for fastapi is https://fastapi.tiangolo.com/
+
+### Secrets and environment variable settings
+
+Secrets such as API keys should be stored as **environment variables** in a `.env` file at the project root. Declaration of environment variables is done in the format below, where `<ENV-VAR>` is the name of the environment variable and `<ENV-VALUE>` is the value of the environment variable.
+
+```
+# .env
+<ENV-VAR>=<ENV-VALUE>
+```
+
+The current environment variables in use are:
+- `WCRF_API_KEY`: API Key for WCRF CUP Global research usage
