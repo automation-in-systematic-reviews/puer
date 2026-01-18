@@ -12,7 +12,7 @@ models = {}
 paths = {
     "albert_imdb": Path("models") / "albert-base-v2-imdb",
     "study_screening": Path("models") / "cup_multi_gpu_24_05_30",
-    "thresholds": Path("data") / "summary_24_08_08.csv",
+    "thresholds": Path("data") / "summary_26_01_05.csv",
 }
 
 threshold = None
