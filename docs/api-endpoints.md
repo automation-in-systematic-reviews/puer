@@ -7,7 +7,7 @@ The interactive OpenAPI documentation is available at `/docs` while the service 
 
 ## Authentication
 
-`POST /study_screening/encode` requires an API key in the `X-API-Key` header.
+`POST /study_screening/encode` and `POST /risk_of_bias/assess` require an API key in the `X-API-Key` header.
 The accepted key is loaded from the `WCRF_API_KEY` environment variable.
 
 Requests without the header return `403 Forbidden`.
@@ -138,3 +138,98 @@ Incorrect API key:
 ```
 
 Invalid request bodies return FastAPI validation errors with status code `422`.
+
+## POST /risk_of_bias/assess
+
+Runs a modified RoB-NObs risk-of-bias assessment for one nutrition observational study PDF using the OpenAI API.
+The endpoint follows the CUP cancer-incidence prompt protocol and returns domain-level judgements only.
+It does not return an overall risk-of-bias judgement.
+
+This endpoint requires `X-API-Key` authentication.
+The server also requires `OPENAI_API_KEY`.
+`OPENAI_MODEL` defaults to `gpt-5.2`, and `OPENAI_REASONING_EFFORT` defaults to `medium`.
+
+### Request headers
+
+```http
+X-API-Key: <api-key>
+Accept: application/json
+```
+
+### Request body
+
+The request uses `multipart/form-data`.
+Only PDF uploads are supported in the current implementation.
+
+Fields:
+
+- `file`: required PDF file.
+- `study_id`: required study identifier.
+- `exposure_timepoint`: optional target exposure description.
+- `outcome_timepoint`: optional target outcome description.
+- `domains`: optional repeated form field for domain names; omit to assess all domains.
+
+Example:
+
+```sh
+curl -X POST "http://localhost:12306/risk_of_bias/assess" \
+  -H "X-API-Key: <api-key>" \
+  -F "study_id=Smith 2020" \
+  -F "exposure_timepoint=baseline dietary fibre intake" \
+  -F "outcome_timepoint=incident colorectal cancer" \
+  -F "file=@study.pdf;type=application/pdf"
+```
+
+### Response
+
+Returns a strict JSON object containing extracted study details and domain assessments.
+
+```json
+{
+  "study_id": "Smith 2020",
+  "study_design_guess": "prospective cohort",
+  "key_extracted_details": {
+    "population_sample": null,
+    "setting_country": null,
+    "study_design": "cohort",
+    "exposure_definition": null,
+    "exposure_measurement": null,
+    "comparator": null,
+    "outcomes": null,
+    "outcome_measurement": null,
+    "follow_up_time": null,
+    "start_of_follow_up_relative_to_exposure_assessment": null,
+    "repeated_exposure_measurement": null,
+    "missing_data_summary": null,
+    "target_cancer_site_for_confounder_guidance": null,
+    "key_confounders_covariates": null,
+    "main_statistical_methods": null,
+    "inclusion_exclusion": null,
+    "protocol_or_analysis_plan_mentioned": null,
+    "notes": null
+  },
+  "domains": [
+    {
+      "domain": "Bias due to confounding",
+      "judgement": "Moderate",
+      "rationale": "...",
+      "signalling_questions": [
+        {
+          "question_id": "1.1",
+          "question": "...",
+          "answer": "PY",
+          "justification": "..."
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Error responses
+
+Non-PDF uploads return `400 Bad Request`.
+Unknown domain names return `422 Unprocessable Entity`.
+Missing OpenAI configuration or missing OpenAI SDK returns `503 Service Unavailable`.
+
+Tests for this endpoint should mock `assess_pdf_document` and must not call the live OpenAI API.

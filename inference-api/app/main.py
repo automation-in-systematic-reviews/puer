@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from loguru import logger
 from sentence_transformers import SentenceTransformer
 
-from app.apis import debug, study_screening
+from app.apis import debug, risk_of_bias, study_screening
 from app.funcs.threshold import read_thresholds
 from app.resources import globals
 
@@ -53,4 +53,5 @@ async def check() -> bool:
 
 
 app.include_router(debug.router)
+app.include_router(risk_of_bias.router)
 app.include_router(study_screening.router)

@@ -28,6 +28,8 @@ dependencies:
   - isort
   - pip
   - pip:
+      - openai
+      - python-multipart
       - transformers
       - sentencepiece
       - sentence-transformers

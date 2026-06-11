@@ -1,4 +1,4 @@
-.PHONY: clean data lint docs
+.PHONY: clean data lint docs run run-local test fmt help
 
 #################################################################################
 # Rules
@@ -11,6 +11,12 @@ run:
 	uvicorn app.main:app --reload \
     --reload-dir /inference-api/app \
 	--host 0.0.0.0 --port 80
+
+## Start API server locally with conda env inference-api, port: 12306
+run-local:
+	python -m uvicorn app.main:app --reload \
+		--reload-dir app \
+		--host 0.0.0.0 --port 12306
 
 ## ==== codebase ====
 

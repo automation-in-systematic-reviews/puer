@@ -11,3 +11,6 @@ services:
       - ./inference-api:/inference-api
     environment:
       - WCRF_API_KEY=${WCRF_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-5.2}
+      - OPENAI_REASONING_EFFORT=${OPENAI_REASONING_EFFORT:-medium}
