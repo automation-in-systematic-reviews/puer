@@ -2,59 +2,114 @@
 
 **P**U'ER **U**tilities for **E**nhancing systematic **R**eviews
 
-## Setting up (for local development)
+PU'ER is a FastAPI inference service for utilities that enhance systematic reviews.
+The current service provides health checks, a debug text classifier endpoint, and a study-screening endpoint that scores a study against a review topic.
 
-First install docker (e.g. `brew install --cask docker`)
-and also git-lfs (e.g. `brew install git-lfs` and then `git lfs install`).
+Key locations:
+- `docs/api-endpoints.md`: docs for the API endpoints
+- `inference-api/app`: API code
 
-Clone the repository.
-Then go to `inference-api/inference-api/models`
-(where the first `inference-api` is the root directory of the local repo),
-and clone the `textattack/albert-base-v2-imdb` model (`git clone https://huggingface.co/textattack/albert-base-v2-imdb`) from Huggingface.
+## Usage
 
-Go back to root `inference-api` and run `docker-compose build` to build the docker image(s).
+Start the API from the repository root with Docker Compose:
 
-Run `docker-compose up` and you should see the service(s) running in the terminal session.
+```sh
+docker-compose up
+```
 
-Now from a web browser go to `http://localhost:12306/docs` you should see a fastapi web service.
+The service is available at `http://localhost:12306` by default.
+Open `http://localhost:12306/docs` for the FastAPI interactive API docs.
 
-## How to use for development
+The default port can be changed with `INFERENCE_API_PORT` in the project-level `.env` file.
 
-By default the `inference-api` directory is watched for changes from the running session for hot reload.
-So any changes in the code will trigger the fastapi service to rerun -- be careful when to do this as
-init time of transformer model loading is non-trivial.
+The Docker container uses `/inference-api` as its working directory.
 
-When the service session is running in a terminal session, open up another terminal session and run
-`docker-compose exec -it inference-api bash` and you will be inside the running docker container.
+Endpoint details are documented in [docs/api-endpoints.md](docs/api-endpoints.md).
 
-Run `make test` will trigger unit test using pytest.
+## Setup
 
-Run `make fmt` will trigger autoformat of the codebase using black.
+Install Docker and Git LFS before building the service.
+On macOS, one way to install them is:
 
-Run `make lint` will trigger linting of the codebase using flake8.
+```sh
+brew install --cask docker
+brew install git-lfs
+git lfs install
+```
+
+Create a `.env` file at the repository root and set the API key used by the protected study-screening endpoint:
+
+```sh
+WCRF_API_KEY=<api-key>
+```
+
+The service expects the following model and data paths inside `inference-api`:
+
+- `models/albert-base-v2-imdb`
+- `models/cup_multi_gpu_24_05_30`
+- `data/summary_26_01_05.csv`
+
+The ALBERT debug model can be fetched from Hugging Face:
+
+```sh
+git clone https://huggingface.co/textattack/albert-base-v2-imdb \
+  inference-api/models/albert-base-v2-imdb
+```
+
+The current code expects `data/summary_26_01_05.csv` for study-screening thresholds.
+At the time of writing, the repository contains `data/summary_24_08_08.csv`, so the expected threshold file should be supplied or the configured path should be updated before relying on `/check` or `/study_screening/encode`.
+
+Build the Docker image from the repository root:
+
+```sh
+docker-compose build
+```
+
+## Development
+
+The Docker Compose service mounts `./inference-api` into the container.
+The API is started with Uvicorn reload enabled, so changes under `inference-api/app` restart the service.
+Model loading can take time after each restart.
+
+To open a shell in the running container:
+
+```sh
+docker-compose exec -it inference-api bash
+```
+
+Run development commands from inside the container:
+
+```sh
+make test
+make fmt
+make lint
+```
+
+`make test` runs pytest.
+`make fmt` runs Black and isort on `app` and `tests`.
+`make lint` runs flake8 on `app` and `tests`.
 
 ## Deployment
 
-Do everything from the setting up section before the `docker-compose up` step.
-Run `docker-compose up -d` instead.
+After completing setup and building the image, run the service in the background:
 
-## Other technical details
-
-### General
-
-- The [conda environment](./inference-api/environment.yml) is created from micromamba
-- [Makefile](./inference-api/Makefile) should be used for interfacing with the code infrastructure
-- Inside the docker image / container, the working directory is `/inference-api`
-- docs for fastapi is https://fastapi.tiangolo.com/
-
-### Secrets and environment variable settings
-
-Secrets such as API keys should be stored as **environment variables** in a `.env` file at the project root. Declaration of environment variables is done in the format below, where `<ENV-VAR>` is the name of the environment variable and `<ENV-VALUE>` is the value of the environment variable.
-
-```
-# .env
-<ENV-VAR>=<ENV-VALUE>
+```sh
+docker-compose up -d
 ```
 
-The current environment variables in use are:
-- `WCRF_API_KEY`: API Key for WCRF CUP Global research usage
+## Configuration
+
+Environment variables are loaded from the project-level `.env` file.
+
+- `WCRF_API_KEY`: API key accepted by `/study_screening/encode`.
+- `INFERENCE_API_PORT`: Optional host port for Docker Compose.
+  Defaults to `12306`.
+
+## References
+
+- FastAPI documentation: https://fastapi.tiangolo.com/
+- ALBERT debug model: https://huggingface.co/textattack/albert-base-v2-imdb
+
+## Citation
+
+> TBD
