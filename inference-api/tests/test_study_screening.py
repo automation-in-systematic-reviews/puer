@@ -90,7 +90,7 @@ def test_no_api_key():
             "study_abstract": "study abstract",
         }
         r = client.post(API_ENDPOINT, json=input_payload)
-        assert r.status_code == 403
+        assert r.status_code == 401
 
 
 def test_wrong_api_key():
