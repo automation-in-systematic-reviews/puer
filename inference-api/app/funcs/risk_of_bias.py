@@ -11,11 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.resources import globals
 
-
 RobAnswer = Literal["Y", "PY", "PN", "N", "NI", "NA"]
-RobJudgement = Literal[
-    "Low", "Moderate", "Serious", "Critical", "No information"
-]
+RobJudgement = Literal["Low", "Moderate", "Serious", "Critical", "No information"]
 
 
 class RiskOfBiasServiceError(RuntimeError):
@@ -621,7 +618,9 @@ def build_domain_user_prompt(
     lines.extend(f"- {question_id} {question}" for question_id, question in questions)
     lines.append("")
     if judgement_algorithm:
-        lines.append("After answering all signalling questions, apply this domain judgement algorithm:")
+        lines.append(
+            "After answering all signalling questions, apply this domain judgement algorithm:"
+        )
         lines.extend(f"- {step}" for step in judgement_algorithm)
         lines.append("")
     lines.append("Output: Return JSON matching the DomainAssessment schema exactly.")
@@ -715,9 +714,7 @@ def _extract_details(
             **_response_kwargs(StudyDetails),
         )
     except _parse_error_types() as exc:
-        raise RiskOfBiasServiceError(
-            "OpenAI study-detail extraction failed"
-        ) from exc
+        raise RiskOfBiasServiceError("OpenAI study-detail extraction failed") from exc
     if resp.output_parsed is None:
         raise RiskOfBiasServiceError(
             "OpenAI study-detail extraction returned no parsed output"

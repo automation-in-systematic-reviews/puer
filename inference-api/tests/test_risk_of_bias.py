@@ -7,7 +7,6 @@ from app.funcs import risk_of_bias
 from app.main import app
 from app.resources import globals
 
-
 API_ENDPOINT = "/risk_of_bias/assess"
 
 
@@ -82,6 +81,7 @@ def test_assess_pdf_returns_domain_assessments():
         assert response.status_code == 200
         assert response.json() == expected
         mock_assess.assert_awaited_once()
+        assert mock_assess.await_args is not None
         call_kwargs = mock_assess.await_args.kwargs
         assert call_kwargs["study_id"] == "Smith 2020"
         assert call_kwargs["filename"] == "study.pdf"
@@ -161,9 +161,7 @@ def test_assess_pdf_maps_service_error_to_503():
             )
 
         assert response.status_code == 503
-        assert response.json() == {
-            "detail": "OpenAI study-detail extraction failed"
-        }
+        assert response.json() == {"detail": "OpenAI study-detail extraction failed"}
 
 
 def test_select_domains_rejects_unknown_domain():
@@ -175,9 +173,7 @@ def test_assessment_deletes_uploaded_pdf_after_success():
     details = risk_of_bias.StudyDetails(
         study_id="Smith 2020",
         study_design_guess="prospective cohort",
-        key_extracted_details=risk_of_bias.KeyExtractedDetails(
-            study_design="cohort"
-        ),
+        key_extracted_details=risk_of_bias.KeyExtractedDetails(study_design="cohort"),
     )
     domain = risk_of_bias.DomainAssessment(
         domain="Bias due to confounding",
@@ -185,15 +181,13 @@ def test_assessment_deletes_uploaded_pdf_after_success():
         rationale="Adjusted for key confounders.",
     )
 
-    with patch("app.funcs.risk_of_bias._get_openai_client") as mock_client, patch(
-        "app.funcs.risk_of_bias._upload_pdf", return_value="file-123"
-    ), patch(
-        "app.funcs.risk_of_bias._extract_details", return_value=details
-    ), patch(
-        "app.funcs.risk_of_bias._assess_domain", return_value=domain
-    ), patch(
-        "app.funcs.risk_of_bias._delete_uploaded_pdf"
-    ) as mock_delete:
+    with (
+        patch("app.funcs.risk_of_bias._get_openai_client") as mock_client,
+        patch("app.funcs.risk_of_bias._upload_pdf", return_value="file-123"),
+        patch("app.funcs.risk_of_bias._extract_details", return_value=details),
+        patch("app.funcs.risk_of_bias._assess_domain", return_value=domain),
+        patch("app.funcs.risk_of_bias._delete_uploaded_pdf") as mock_delete,
+    ):
         result = risk_of_bias._assess_pdf_document_sync(
             filename="study.pdf",
             pdf_bytes=b"%PDF-1.4\n% test pdf bytes\n",
@@ -209,12 +203,15 @@ def test_assessment_deletes_uploaded_pdf_after_success():
 
 
 def test_assessment_deletes_uploaded_pdf_after_failure():
-    with patch("app.funcs.risk_of_bias._get_openai_client") as mock_client, patch(
-        "app.funcs.risk_of_bias._upload_pdf", return_value="file-123"
-    ), patch(
-        "app.funcs.risk_of_bias._extract_details",
-        side_effect=risk_of_bias.RiskOfBiasServiceError("OpenAI failed"),
-    ), patch("app.funcs.risk_of_bias._delete_uploaded_pdf") as mock_delete:
+    with (
+        patch("app.funcs.risk_of_bias._get_openai_client") as mock_client,
+        patch("app.funcs.risk_of_bias._upload_pdf", return_value="file-123"),
+        patch(
+            "app.funcs.risk_of_bias._extract_details",
+            side_effect=risk_of_bias.RiskOfBiasServiceError("OpenAI failed"),
+        ),
+        patch("app.funcs.risk_of_bias._delete_uploaded_pdf") as mock_delete,
+    ):
         with pytest.raises(risk_of_bias.RiskOfBiasServiceError):
             risk_of_bias._assess_pdf_document_sync(
                 filename="study.pdf",

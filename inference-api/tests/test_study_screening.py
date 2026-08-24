@@ -52,15 +52,16 @@ def test_post_encode():
             np.array([0.5, 0.5, 0.5]),  # Mocked study encoding
         ]
 
-        with patch(
-            "app.apis.study_screening.globals.models",
-            {"study_screening": {"model": mock_model}},
-        ), patch(
-            "app.apis.study_screening.select_threshold"
-        ) as mock_select_threshold, patch(
-            "app.funcs.threshold.threshold_to_binary_labels"
-        ) as mock_threshold_to_binary_labels:
-
+        with (
+            patch(
+                "app.apis.study_screening.globals.models",
+                {"study_screening": {"model": mock_model}},
+            ),
+            patch("app.apis.study_screening.select_threshold") as mock_select_threshold,
+            patch(
+                "app.funcs.threshold.threshold_to_binary_labels"
+            ) as mock_threshold_to_binary_labels,
+        ):
             mock_select_threshold.return_value = 0.8
             mock_threshold_to_binary_labels.return_value = "included"
 

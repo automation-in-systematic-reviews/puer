@@ -1,6 +1,12 @@
+from __future__ import annotations
+
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from environs import Env
+
+if TYPE_CHECKING:
+    from pandas import DataFrame
 
 env = Env()
 env.read_env()
@@ -20,3 +26,4 @@ paths = {
 }
 
 threshold = None
+thresholds: DataFrame

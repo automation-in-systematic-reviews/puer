@@ -70,6 +70,7 @@ docker-compose build
 The Docker Compose service mounts `./inference-api` into the container.
 The API is started with Uvicorn reload enabled, so changes under `inference-api/app` restart the service.
 Model loading can take time after each restart.
+The image builds the project's dependencies into the named `inference-api` Conda environment.
 
 To open a shell in the running container:
 
@@ -80,14 +81,38 @@ docker-compose exec -it inference-api bash
 Run development commands from inside the container:
 
 ```sh
-make test
-make fmt
-make lint
+just --list
+just test
+just fmt
+just lint
 ```
 
-`make test` runs pytest.
-`make fmt` runs Black and isort on `app` and `tests`.
-`make lint` runs flake8 on `app` and `tests`.
+`just test` runs pytest.
+`just fmt` applies Ruff lint fixes, including import sorting, and formats `app` and `tests`.
+`just lint` checks Ruff formatting, runs Ruff linting, and runs `ty` on `app` and `tests`.
+For native development, follow [Local development](docs/local-development.md).
+
+## Verify Docker changes
+
+Run this Docker verification after changes to the image, dependencies, or Compose configuration.
+Build and start the service from the repository root:
+
+```sh
+docker-compose build
+docker-compose up -d
+```
+
+Verify the available recipes and quality checks inside the running container:
+
+```sh
+docker-compose exec -it inference-api bash
+just --list
+just lint
+just test
+```
+
+Then verify `http://localhost:12306/check` and open `http://localhost:12306/docs`.
+These checks require `WCRF_API_KEY` and the configured model and threshold-data assets, and `/check` returns `true` only when all configured asset paths are available.
 
 ## Deployment
 

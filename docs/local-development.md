@@ -12,12 +12,35 @@ Run `git lfs install` before obtaining LFS-managed assets.
 
 Run all commands in this guide from `inference-api`.
 
+Create a new environment, activate it, and synchronize the locked uv dependencies:
+
 ```sh
 conda env create -f environment.yml
 conda activate inference-api
+just init
 ```
 
 Use the equivalent commands if your Conda-compatible manager has different syntax.
+
+Recreate an environment that predates the uv migration so legacy Conda-owned Python packages do not remain installed:
+
+```sh
+conda env remove --name inference-api
+conda env create -f environment.yml
+conda activate inference-api
+just init
+```
+
+After that migration, update the environment following later changes to `environment.yml`, then activate it and synchronize the locked uv dependencies again:
+
+```sh
+conda env update -f environment.yml --prune
+conda activate inference-api
+just init
+```
+
+The recipes reject any active Conda environment other than `inference-api`.
+`just init` makes uv target the active Conda prefix, so dependencies are not installed into a nested `.venv`.
 
 ## Obtain required assets
 
@@ -51,15 +74,15 @@ Set it in `inference-api/.env` only when exercising the risk-of-bias endpoint.
 With the `inference-api` environment active, first validate the local checkout:
 
 ```sh
-make test
+just test
 ```
 
-Use `make test` as the first troubleshooting step after changing the environment, dependencies, or local assets.
+Use `just test` as the first troubleshooting step after changing the environment, dependencies, or local assets.
 
 Start the API after validation succeeds:
 
 ```sh
-make run-local
+just run-local
 ```
 
 Verify that configured model and data paths are available at http://localhost:12306/check.
@@ -73,5 +96,5 @@ Add `OPENAI_API_KEY` only when using the risk-of-bias endpoint.
 If `/check` returns `false` or model loading fails, confirm that all three required asset paths exist exactly as listed above.
 Request the private screening model or threshold data from the project maintainer when either private asset is unavailable.
 
-If Make cannot find its targets or the API cannot resolve relative paths, confirm that the current directory is `inference-api`.
-If Python uses unexpected dependencies, reactivate the `inference-api` Conda environment and rerun `make test`.
+If just cannot find its recipes or the API cannot resolve relative paths, confirm that the current directory is `inference-api`.
+If Python uses unexpected dependencies, reactivate the `inference-api` Conda environment, run `just init`, and rerun `just test`.

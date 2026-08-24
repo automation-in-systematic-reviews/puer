@@ -10,7 +10,6 @@ from app.funcs.risk_of_bias import (
 )
 from app.resources.security import api_key_auth
 
-
 router = APIRouter()
 
 
