@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from loguru import logger
 from sentence_transformers import SentenceTransformer
 
-from app.apis import debug, risk_of_bias, study_screening
+from app.apis import data_extraction, debug, risk_of_bias, study_screening
 from app.funcs.threshold import read_thresholds
 from app.resources import globals
 
@@ -13,7 +13,6 @@ from app.resources import globals
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("api config info")
-    logger.info(f"api_keys: {globals.api_keys}")
     logger.info("api init: init models")
     globals.models["albert-imdb"] = {
         "tokenizer": transformers.AutoTokenizer.from_pretrained(
@@ -53,5 +52,6 @@ async def check() -> bool:
 
 
 app.include_router(debug.router)
+app.include_router(data_extraction.router)
 app.include_router(risk_of_bias.router)
 app.include_router(study_screening.router)

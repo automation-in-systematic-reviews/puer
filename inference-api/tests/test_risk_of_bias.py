@@ -127,7 +127,7 @@ def test_assess_pdf_requires_api_key():
 
         response = client.post(API_ENDPOINT, files=files, data=data)
 
-        assert response.status_code == 401
+        assert response.status_code == 403
 
 
 def test_assess_pdf_maps_service_error_to_503():

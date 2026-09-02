@@ -16,6 +16,10 @@ api_keys = [env("WCRF_API_KEY")]
 openai_api_key = env("OPENAI_API_KEY", None)
 openai_model = env("OPENAI_MODEL", "gpt-5.2")
 openai_reasoning_effort = env("OPENAI_REASONING_EFFORT", "medium")
+openai_study_screening_model = env("OPENAI_STUDY_SCREENING_MODEL", "gpt-5.6-terra")
+openai_study_screening_reasoning_effort = env(
+    "OPENAI_STUDY_SCREENING_REASONING_EFFORT", "medium"
+)
 
 models = {}
 
