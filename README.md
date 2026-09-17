@@ -3,7 +3,7 @@
 **P**U'ER **U**tilities for **E**nhancing systematic **R**eviews
 
 PU'ER is a FastAPI inference service for utilities that enhance systematic reviews.
-The current service provides health checks, a debug text classifier endpoint, and a study-screening endpoint that scores a study against a review topic.
+The service provides health checks, a debug text classifier, embedding-based study screening, prompt-based title and abstract extraction and screening, and PDF risk-of-bias assessment endpoints.
 
 Key locations:
 - `docs/api-endpoints.md`: docs for the API endpoints
@@ -56,8 +56,8 @@ git clone https://huggingface.co/textattack/albert-base-v2-imdb \
   inference-api/models/albert-base-v2-imdb
 ```
 
-The current code expects `data/summary_26_01_05.csv` for study-screening thresholds.
-At the time of writing, the repository contains `data/summary_24_08_08.csv`, so the expected threshold file should be supplied or the configured path should be updated before relying on `/check` or `/study_screening/encode`.
+The code uses `data/summary_26_01_05.csv` for study-screening thresholds.
+The repository also includes the earlier `data/summary_24_08_08.csv` threshold file.
 
 Build the Docker image from the repository root:
 
