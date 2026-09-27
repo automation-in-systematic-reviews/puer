@@ -7,6 +7,7 @@ The service provides health checks, a debug text classifier, embedding-based stu
 
 Key locations:
 - `docs/api-endpoints.md`: docs for the API endpoints
+- `docs/local-development.md`: native development without Docker Compose
 - `inference-api/app`: API code
 
 ## Usage
@@ -75,9 +76,10 @@ The image builds the project's dependencies into the named `inference-api` Conda
 To open a shell in the running container:
 
 ```sh
-docker-compose exec -it inference-api bash
+docker-compose exec inference-api micromamba run -n inference-api bash
 ```
 
+This starts the shell with the named Conda environment active.
 Run development commands from inside the container:
 
 ```sh
@@ -105,7 +107,7 @@ docker-compose up -d
 Verify the available recipes and quality checks inside the running container:
 
 ```sh
-docker-compose exec -it inference-api bash
+docker-compose exec inference-api micromamba run -n inference-api bash
 just --list
 just lint
 just test

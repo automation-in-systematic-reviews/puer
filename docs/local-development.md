@@ -5,39 +5,66 @@ Use this guide to run the inference API natively rather than through Docker Comp
 ## Prerequisites
 
 Install a Conda-compatible environment manager.
+The commands below use Micromamba; Conda users can replace `micromamba` with `conda`.
 Install Git LFS when the required model or data assets are provided through LFS.
 Run `git lfs install` before obtaining LFS-managed assets.
 
 ## Create and activate the environment
 
 Run all commands in this guide from `inference-api`.
-Create a new environment, activate it, and synchronize the locked uv dependencies.
+Create the environment and activate it as a replacement for the current environment.
+Use `micromamba activate inference-api`, not `micromamba activate --stack inference-api`, so tools cannot leak in from another environment.
 
 ```sh
-conda env create -f environment.yml
-conda activate inference-api
+micromamba env create -f environment.yml
+micromamba activate inference-api
+```
+
+Verify that Python, uv, and just all come from the new environment before synchronizing project dependencies.
+
+```sh
+python --version
+command -v python
+command -v uv
+command -v just
+```
+
+Python must report version 3.12, and all three command paths must be under `$CONDA_PREFIX/bin`.
+Synchronize the locked uv dependencies after those checks pass.
+
+```sh
 just init
 ```
 
-Use the equivalent commands if your Conda-compatible manager has different syntax.
-Recreate an environment that predates the uv migration so legacy Conda-owned Python packages do not remain installed.
+### Recreate an environment from before the uv migration
+
+Recreate an existing `inference-api` environment if it uses a Python version other than 3.12 or does not contain its own `uv` and `just` executables.
+Updating that legacy environment in place can retain incompatible Conda-owned packages, so remove it instead.
+Deactivate `inference-api` before removing it.
 
 ```sh
-conda env remove --name inference-api
-conda env create -f environment.yml
-conda activate inference-api
+micromamba deactivate
+micromamba env remove --name inference-api
+micromamba env create -f environment.yml
+micromamba activate inference-api
+python --version
+command -v python
+command -v uv
+command -v just
 just init
 ```
 
-After that migration, update the environment following later changes to `environment.yml`, then activate it and synchronize the locked uv dependencies again.
+### Update an environment created after the migration
+
+After the initial migration, update the environment following later changes to `environment.yml`, then activate it normally and synchronize the locked uv dependencies again.
 
 ```sh
-conda env update -f environment.yml --prune
-conda activate inference-api
+micromamba env update -f environment.yml --prune
+micromamba activate inference-api
 just init
 ```
 
-The recipes reject any active Conda environment other than `inference-api`.
+The recipes reject an active Conda environment other than `inference-api`, an unsupported Python version, or development tools inherited from another environment.
 `just init` makes uv target the active Conda prefix, so dependencies are not installed into a nested `.venv`.
 
 ## Obtain required assets
@@ -107,5 +134,9 @@ Add `OPENAI_API_KEY` only when deliberately using an OpenAI-backed endpoint.
 If a prompt-based request returns a configuration `503`, check `OPENAI_API_KEY` and any screening-specific overrides.
 If `/check` returns `false` or model loading fails, confirm that all three required asset paths exist exactly as listed above.
 Request the private screening model or threshold data from the project maintainer when either private asset is unavailable.
-If just cannot find its recipes or the API cannot resolve relative paths, confirm that the current directory is `inference-api`.
-If Python uses unexpected dependencies, reactivate the `inference-api` Conda environment, run `just init`, and rerun the offline verification command.
+If `just` reports that no justfile or recipes are available, confirm that the current directory is `inference-api`.
+If the shell reports `just: command not found`, activate `inference-api` normally and check `$CONDA_PREFIX/bin/just`.
+Recreate the environment using the migration procedure above only if that executable remains absent.
+If a recipe reports that Python, uv, or just came from an unexpected path, activate `inference-api` without `--stack` and confirm that each command resolves under `$CONDA_PREFIX/bin`.
+If uv reports that the project environment is incompatible and cannot be recreated because it is not a virtual environment, recreate the Conda environment rather than asking uv to replace its prefix.
+If Python uses unexpected dependencies after the command-path checks pass, run `just init` and rerun the offline verification command.
