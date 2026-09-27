@@ -8,6 +8,8 @@ For native local setup and troubleshooting, see [Local development](docs/local-d
 Use the existing Docker Compose workflow when developing in the containerized environment described in `README.md`.
 Use the native workflow when running the API directly from the local `inference-api` Conda environment.
 Native setup steps are single-sourced in [Local development](docs/local-development.md).
+Application keys, environment loading, and Docker Compose forwarding are documented in [Environment variables](docs/environment-variables.md).
+LLM model and reasoning scopes, provider compatibility, and provenance alignment are documented in [LLM configuration](docs/llm-configuration.md).
 
 ## Dependency ownership
 

@@ -7,6 +7,8 @@ The service provides health checks, a debug text classifier, embedding-based stu
 
 Key locations:
 - `docs/api-endpoints.md`: docs for the API endpoints
+- `docs/environment-variables.md`: canonical API-key, environment-loading, and Docker Compose reference
+- `docs/llm-configuration.md`: canonical model, reasoning, provider, and provenance reference
 - `docs/local-development.md`: native development without Docker Compose
 - `inference-api/app`: API code
 
@@ -21,7 +23,8 @@ docker-compose up
 The service is available at `http://localhost:12306` by default.
 Open `http://localhost:12306/docs` for the FastAPI interactive API docs.
 
-The default port can be changed with `INFERENCE_API_PORT` in the project-level `.env` file.
+See [Environment variables](docs/environment-variables.md) for API keys, application environment loading, and the Docker Compose port input.
+See [LLM configuration](docs/llm-configuration.md) for model and reasoning settings used by the prompt and risk-of-bias endpoints.
 
 The Docker container uses `/inference-api` as its working directory.
 
@@ -38,11 +41,7 @@ brew install git-lfs
 git lfs install
 ```
 
-Create a `.env` file at the repository root and set the API key used by the protected study-screening endpoint:
-
-```sh
-WCRF_API_KEY=<api-key>
-```
+Configure API keys and environment loading as described in [Environment variables](docs/environment-variables.md), then use [LLM configuration](docs/llm-configuration.md) for nonsecret model and reasoning overrides.
 
 The service expects the following model and data paths inside `inference-api`:
 
@@ -114,7 +113,8 @@ just test
 ```
 
 Then verify `http://localhost:12306/check` and open `http://localhost:12306/docs`.
-These checks require `WCRF_API_KEY` and the configured model and threshold-data assets, and `/check` returns `true` only when all configured asset paths are available.
+These checks require the configured authentication value and model and threshold-data assets, and `/check` returns `true` only when all configured asset paths are available.
+See [Environment variables](docs/environment-variables.md) for configuration details.
 
 ## Deployment
 
@@ -126,11 +126,8 @@ docker-compose up -d
 
 ## Configuration
 
-Environment variables are loaded from the project-level `.env` file.
-
-- `WCRF_API_KEY`: API key accepted by `/study_screening/encode`.
-- `INFERENCE_API_PORT`: Optional host port for Docker Compose.
-  Defaults to `12306`.
+See [Environment variables](docs/environment-variables.md) for API keys, supported application environment behavior, native shell setup, and Docker Compose forwarding.
+See [LLM configuration](docs/llm-configuration.md) for model and reasoning defaults, endpoint scope, provider compatibility, and provenance alignment.
 
 ## References
 

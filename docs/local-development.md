@@ -85,16 +85,10 @@ Contact the project maintainer for the private screening model at `models/cup_mu
 
 ## Configure local environment variables
 
-Set `WCRF_API_KEY` for protected local endpoints without recording its value in project files or documentation.
-Set `OPENAI_API_KEY` only when deliberately invoking an OpenAI-backed endpoint.
-The prompt-based screening endpoints use `OPENAI_STUDY_SCREENING_MODEL`, which defaults to `gpt-5.6-terra`.
-They use `OPENAI_STUDY_SCREENING_REASONING_EFFORT`, which defaults to `medium`.
-Set either screening-specific variable only to override its default for a local deployment.
-The risk-of-bias endpoint remains separate and uses `OPENAI_MODEL`, defaulting to `gpt-5.2`, and `OPENAI_REASONING_EFFORT`, defaulting to `medium`.
-
-The OpenAI client is initialized lazily when a prompt-based extraction or prediction request reaches the provider boundary.
-Starting the API, importing the screening service, and running its mocked tests do not construct the screening OpenAI client.
-Missing or invalid provider configuration therefore affects a prompt-based request as a `503` configuration error rather than native startup.
+Use [Environment variables](environment-variables.md) as the canonical reference for API keys, environment loading, native shell setup, restart behavior, and Docker forwarding.
+Use [LLM configuration](llm-configuration.md) for model and reasoning defaults, endpoint scope, provider compatibility, lazy initialization, and provenance alignment.
+For native development, export values in the shell that launches `just run-local` so the task runner and API process inherit them.
+Restart the API after changing an application variable.
 
 ## Offline verification
 
@@ -129,9 +123,8 @@ Invoking a prompt-based endpoint against a configured provider is an explicit op
 
 ## Troubleshooting
 
-If startup reports a missing environment variable, confirm that the local environment supplies `WCRF_API_KEY`.
-Add `OPENAI_API_KEY` only when deliberately using an OpenAI-backed endpoint.
-If a prompt-based request returns a configuration `503`, check `OPENAI_API_KEY` and any screening-specific overrides.
+If startup reports a missing environment variable, check [Environment variables](environment-variables.md) and the shell that launched the API.
+If an LLM request returns a configuration `503`, check [LLM configuration](llm-configuration.md) and the shell that launched the API.
 If `/check` returns `false` or model loading fails, confirm that all three required asset paths exist exactly as listed above.
 Request the private screening model or threshold data from the project maintainer when either private asset is unavailable.
 If `just` reports that no justfile or recipes are available, confirm that the current directory is `inference-api`.
