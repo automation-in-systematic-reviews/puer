@@ -28,6 +28,7 @@ See [LLM configuration](docs/llm-configuration.md) for model and reasoning setti
 
 The Docker container uses `/inference-api` as its working directory.
 
+See [Prompt-based screening](docs/prompt-based-screening.md) for the title-and-abstract extraction and screening workflow.
 Endpoint details are documented in [docs/api-endpoints.md](docs/api-endpoints.md).
 
 ## Setup

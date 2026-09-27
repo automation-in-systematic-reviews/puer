@@ -124,6 +124,9 @@ DebugEncodeResponse = Array<string>
 
 ## Prompt-based title and abstract screening
 
+See [Prompt-based screening](prompt-based-screening.md) for the workflow, stage handoff, and interpretation of results.
+This section defines the detailed request and response contracts.
+
 The prompt-based workflow has two authenticated JSON endpoints with exact trailing-slash paths: `POST /data_extraction/title_abstract/` and `POST /study_screening/predict/`.
 Both use `X-API-Key` authentication and reject missing or invalid keys as described in [Authentication](#authentication).
 Both accept only their declared fields, because their request and response models forbid undeclared fields.
