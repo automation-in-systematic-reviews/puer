@@ -1,13 +1,15 @@
 from contextlib import asynccontextmanager
 
 import transformers
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from loguru import logger
 from sentence_transformers import SentenceTransformer
 
 from app.apis import data_extraction, debug, risk_of_bias, study_screening
+from app.funcs import title_abstract_screening
 from app.funcs.threshold import read_thresholds
 from app.resources import globals
+from app.resources.security import api_key_auth
 
 
 @asynccontextmanager
@@ -48,6 +50,24 @@ async def check() -> bool:
         path_exist_list.append(path_exist)
     res = sum(path_exist_list) == len(path_exist_list)
 
+    return res
+
+
+@app.get("/check/auth", dependencies=[Depends(api_key_auth)])
+async def check_auth() -> dict[str, bool]:
+    """Check application credentials without invoking any model provider."""
+    res = {"authenticated": True}
+    return res
+
+
+@app.get(
+    "/check/extraction",
+    response_model=title_abstract_screening.ExtractionCheckResponse,
+    dependencies=[Depends(api_key_auth)],
+)
+async def check_extraction() -> title_abstract_screening.ExtractionCheckResponse:
+    """Check local extraction-provider setup without invoking the provider."""
+    res = title_abstract_screening.check_extraction_configuration()
     return res
 
 

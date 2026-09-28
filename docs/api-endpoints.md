@@ -17,7 +17,7 @@ The typed blocks below describe the public request and response shapes without r
 
 ## Authentication
 
-`POST /study_screening/encode`, `POST /study_screening/predict/`, `POST /data_extraction/title_abstract/`, and `POST /risk_of_bias/assess` require an API key in the `X-API-Key` header.
+`GET /check/auth`, `GET /check/extraction`, `POST /study_screening/encode`, `POST /study_screening/predict/`, `POST /data_extraction/title_abstract/`, and `POST /risk_of_bias/assess` require an API key in the `X-API-Key` header.
 The accepted key is configured with `WCRF_API_KEY`; see [Environment variables](environment-variables.md) for the canonical configuration reference.
 Requests without the header return `403 Forbidden` with `{"detail":"Not authenticated"}`.
 Requests with an incorrect key return `401 Unauthorized` with `{"detail":"The API key is not correct"}`.
@@ -64,6 +64,71 @@ boolean
 ```json
 true
 ```
+
+## GET /check/auth
+
+Validates the `X-API-Key` header and returns a successful authentication response.
+This is an authentication and reachability check only: it does not check model or data paths and does not call a provider.
+A successful response does not prove that a provider is configured.
+
+Response type:
+
+```text
+{
+  authenticated: boolean
+}
+```
+
+```json
+{
+  "authenticated": true
+}
+```
+
+## GET /check/extraction
+
+Checks local extraction-provider configuration using the running API process's settings.
+Requires `X-API-Key` authentication and returns HTTP 200 with diagnostic fields even when `ready` is false.
+It checks that the provider key and screening model are nonblank, that the reasoning effort is allowed, that the OpenAI client can be constructed, and that `responses.parse` is callable.
+It closes the temporary client without making a provider request or sending study data.
+
+Response type:
+
+```text
+{
+  ready: boolean,
+  provider_key_configured: boolean,
+  model_configured: boolean,
+  reasoning_effort_valid: boolean,
+  client_initialized: boolean | null,
+  responses_parse_available: boolean | null,
+  failure_reason: string | null,
+  error_type: string | null
+}
+```
+
+`null` for a client or parser check means a prerequisite prevented that check from running.
+`failure_reason` is a locally generated diagnostic code; `error_type` is an exception class name when client setup fails, never the exception message.
+No credential values, configured model names, prompts, provider bodies, or raw exception text are returned.
+
+Example when the server has no provider key configured:
+
+```json
+{
+  "ready": false,
+  "provider_key_configured": false,
+  "model_configured": true,
+  "reasoning_effort_valid": true,
+  "client_initialized": null,
+  "responses_parse_available": null,
+  "failure_reason": "missing_provider_key",
+  "error_type": null
+}
+```
+
+A true `ready` value only establishes local configuration and SDK-interface readiness.
+It does not verify the provider key remotely, model access, quota, network connectivity, or whether a real structured-output request will succeed.
+For configuration changes, restart the API process before checking again; these settings are loaded at import time.
 
 ## POST /debug/encode
 

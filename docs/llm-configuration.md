@@ -74,10 +74,26 @@ See [API endpoints](api-endpoints.md) for complete request and response schemas 
 ## Lazy initialization and configuration failures
 
 - Configuration read: On import of `app/resources/globals.py`.
-- Client creation: At the LLM provider boundary, not API startup or prompt-service import.
+- Client creation: At the LLM provider boundary or during an explicit extraction diagnostic check, not API startup or prompt-service import.
 - Prompt configuration errors (`503`): Missing key, blank or invalid screening setting, missing SDK support, client-construction failure, or missing `responses.parse` capability.
 - Prompt provider errors (`503`): Transport, request, and parsed-output failures, using the documented error categories.
 - Risk-of-bias errors (`503`): Missing credentials or SDK/provider failures; client creation occurs only when `/risk_of_bias/assess` is invoked.
+
+## Diagnose extraction configuration
+
+Use authenticated [`GET /check/extraction`](api-endpoints.md#get-checkextraction) to inspect local provider readiness without making a paid request.
+Unlike `/check/auth`, this checks the API process's provider configuration and SDK interface, not just the notebook's application key.
+It returns only safe flags and diagnostic codes, not credential values or raw exception messages.
+
+- `missing_provider_key`: configure the server-side `OPENAI_API_KEY`; it is separate from `WCRF_API_KEY`.
+- `missing_model`: set a nonblank screening model identifier.
+- `invalid_reasoning_effort`: choose an allowed screening reasoning value listed above.
+- `client_initialization_failed`: check the installed OpenAI SDK and client setup; the response includes the underlying exception class name when available.
+- `structured_parse_unavailable`: use an SDK with callable `responses.parse` support.
+- `client_cleanup_failed`: the temporary client's cleanup failed; check the SDK and local client lifecycle.
+
+Restart the API after changing configuration, then repeat the diagnostic check.
+A successful local check does not establish remote credential validity, model availability, quota, or provider compatibility with a real request.
 
 ## Practical nonsecret overrides
 

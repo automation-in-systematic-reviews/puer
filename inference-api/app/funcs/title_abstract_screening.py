@@ -76,6 +76,17 @@ ScreeningErrorCode = Literal[
     "provider_contract_error",
 ]
 ScreeningStage = Literal["extraction", "prediction"]
+ExtractionCheckFailureReason = Literal[
+    "missing_provider_key",
+    "missing_model",
+    "invalid_reasoning_effort",
+    "client_initialization_failed",
+    "structured_parse_unavailable",
+    "client_cleanup_failed",
+]
+VALID_REASONING_EFFORTS = frozenset(
+    {"none", "minimal", "low", "medium", "high", "xhigh"}
+)
 
 SCREENING_SCHEMA_VERSION: Literal["1"] = "1"
 EXTRACTION_PROMPT_VERSION: PromptVersion = "title-abstract-extraction-v1"
@@ -345,6 +356,19 @@ class ScreeningServiceError(RuntimeError):
         self.detail = detail
 
 
+class ExtractionCheckResponse(StrictBaseModel):
+    """Local extraction-provider readiness diagnostics without provider work."""
+
+    ready: bool
+    provider_key_configured: bool
+    model_configured: bool
+    reasoning_effort_valid: bool
+    client_initialized: bool | None
+    responses_parse_available: bool | None
+    failure_reason: ExtractionCheckFailureReason | None
+    error_type: str | None
+
+
 # ==== ERROR BOUNDARY ====
 
 
@@ -378,17 +402,25 @@ def _service_error(
     return res
 
 
-def _validate_configuration(stage: ScreeningStage) -> None:
-    """Reject missing or invalid local screening provider configuration."""
+def _configuration_check_values() -> tuple[bool, bool, bool]:
+    """Return the same local configuration predicates used by extraction."""
+    key = globals.openai_api_key
     model = globals.openai_study_screening_model
     effort = globals.openai_study_screening_reasoning_effort
-    valid_efforts = {"none", "minimal", "low", "medium", "high", "xhigh"}
-    if (
-        not globals.openai_api_key
-        or not isinstance(model, str)
-        or not model.strip()
-        or effort not in valid_efforts
-    ):
+    res = (
+        isinstance(key, str) and bool(key.strip()),
+        isinstance(model, str) and bool(model.strip()),
+        isinstance(effort, str) and effort in VALID_REASONING_EFFORTS,
+    )
+    return res
+
+
+def _validate_configuration(stage: ScreeningStage) -> None:
+    """Reject missing or invalid local screening provider configuration."""
+    key_configured, model_configured, reasoning_effort_valid = (
+        _configuration_check_values()
+    )
+    if not (key_configured and model_configured and reasoning_effort_valid):
         raise _service_error("configuration_error", stage)
 
 
@@ -404,6 +436,99 @@ def _get_openai_client(stage: ScreeningStage) -> Any:
     except Exception as exc:
         raise _service_error("configuration_error", stage) from exc
     return res
+
+
+def check_extraction_configuration() -> ExtractionCheckResponse:
+    """Check extraction SDK setup locally without making a provider request."""
+    key_configured, model_configured, reasoning_effort_valid = (
+        _configuration_check_values()
+    )
+    base = {
+        "provider_key_configured": key_configured,
+        "model_configured": model_configured,
+        "reasoning_effort_valid": reasoning_effort_valid,
+    }
+    if not key_configured:
+        return ExtractionCheckResponse(
+            ready=False,
+            client_initialized=None,
+            responses_parse_available=None,
+            failure_reason="missing_provider_key",
+            error_type=None,
+            **base,
+        )
+    if not model_configured:
+        return ExtractionCheckResponse(
+            ready=False,
+            client_initialized=None,
+            responses_parse_available=None,
+            failure_reason="missing_model",
+            error_type=None,
+            **base,
+        )
+    if not reasoning_effort_valid:
+        return ExtractionCheckResponse(
+            ready=False,
+            client_initialized=None,
+            responses_parse_available=None,
+            failure_reason="invalid_reasoning_effort",
+            error_type=None,
+            **base,
+        )
+
+    try:
+        client = _get_openai_client("extraction")
+    except ScreeningServiceError as exc:
+        cause = exc.__cause__
+        return ExtractionCheckResponse(
+            ready=False,
+            client_initialized=False,
+            responses_parse_available=None,
+            failure_reason="client_initialization_failed",
+            error_type=type(cause).__name__ if cause is not None else None,
+            **base,
+        )
+    except Exception as exc:
+        return ExtractionCheckResponse(
+            ready=False,
+            client_initialized=False,
+            responses_parse_available=None,
+            failure_reason="client_initialization_failed",
+            error_type=type(exc).__name__,
+            **base,
+        )
+
+    parse_available = False
+    cleanup_failed = False
+    try:
+        try:
+            responses = getattr(client, "responses", None)
+            parser = getattr(responses, "parse", None)
+            parse_available = callable(parser)
+        except Exception:
+            parse_available = False
+    finally:
+        try:
+            close = getattr(client, "close", None)
+            if callable(close):
+                close()
+        except Exception:
+            cleanup_failed = True
+
+    failure_reason: ExtractionCheckFailureReason | None = None
+    if cleanup_failed:
+        failure_reason = "client_cleanup_failed"
+    elif not parse_available:
+        failure_reason = "structured_parse_unavailable"
+
+    return ExtractionCheckResponse(
+        ready=parse_available and not cleanup_failed,
+        client_initialized=True,
+        responses_parse_available=parse_available,
+        failure_reason=failure_reason,
+        error_type=None,
+        **base,
+    )
 
 
 def _provider_error_code(exc: Exception) -> ScreeningErrorCode:

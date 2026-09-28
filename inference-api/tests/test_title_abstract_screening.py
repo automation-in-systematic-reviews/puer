@@ -592,6 +592,151 @@ def test_missing_configuration_has_stable_configuration_error(
     _assert_service_error(exc_info, "configuration_error", stage)
 
 
+def test_validate_configuration_rejects_whitespace_only_provider_key(
+    synthetic_extraction_provider_config,
+):
+    with (
+        patch.object(globals, "openai_api_key", " \t"),
+        pytest.raises(screening.ScreeningServiceError) as exc_info,
+    ):
+        screening._validate_configuration("extraction")
+
+    _assert_service_error(exc_info, "configuration_error", "extraction")
+
+
+@pytest.mark.parametrize(
+    ("setting", "value", "failure_reason"),
+    [
+        ("openai_api_key", None, "missing_provider_key"),
+        ("openai_api_key", "", "missing_provider_key"),
+        ("openai_api_key", "  \t", "missing_provider_key"),
+        ("openai_study_screening_model", "", "missing_model"),
+        ("openai_study_screening_model", "  \t", "missing_model"),
+        (
+            "openai_study_screening_reasoning_effort",
+            "invented",
+            "invalid_reasoning_effort",
+        ),
+    ],
+)
+def test_extraction_check_reports_invalid_configuration_without_client_setup(
+    synthetic_extraction_provider_config, setting, value, failure_reason
+):
+    with (
+        patch.object(globals, setting, value),
+        patch.object(screening, "_get_openai_client") as get_client,
+    ):
+        result = screening.check_extraction_configuration()
+
+    assert result.ready is False
+    assert result.client_initialized is None
+    assert result.responses_parse_available is None
+    assert result.failure_reason == failure_reason
+    assert result.error_type is None
+    get_client.assert_not_called()
+
+
+def test_extraction_check_reports_ready_without_calling_provider_and_closes_client(
+    synthetic_extraction_provider_config,
+):
+    client = MagicMock()
+    with patch.object(
+        screening, "_get_openai_client", return_value=client
+    ) as get_client:
+        result = screening.check_extraction_configuration()
+
+    assert result.model_dump() == {
+        "ready": True,
+        "provider_key_configured": True,
+        "model_configured": True,
+        "reasoning_effort_valid": True,
+        "client_initialized": True,
+        "responses_parse_available": True,
+        "failure_reason": None,
+        "error_type": None,
+    }
+    get_client.assert_called_once_with("extraction")
+    client.responses.parse.assert_not_called()
+    client.close.assert_called_once_with()
+
+
+def test_extraction_check_reports_missing_parser_and_still_closes_client(
+    synthetic_extraction_provider_config,
+):
+    close = MagicMock()
+    client = SimpleNamespace(responses=SimpleNamespace(), close=close)
+    with patch.object(screening, "_get_openai_client", return_value=client):
+        result = screening.check_extraction_configuration()
+
+    assert result.ready is False
+    assert result.client_initialized is True
+    assert result.responses_parse_available is False
+    assert result.failure_reason == "structured_parse_unavailable"
+    assert result.error_type is None
+    close.assert_called_once_with()
+
+
+def test_extraction_check_redacts_sdk_import_error_and_reports_exception_type(
+    synthetic_extraction_provider_config,
+):
+    secret = "sdk-import-secret-canary"
+
+    def fail_client(stage):
+        try:
+            raise ImportError(secret)
+        except ImportError as cause:
+            raise screening._service_error("configuration_error", stage) from cause
+
+    with patch.object(screening, "_get_openai_client", side_effect=fail_client):
+        result = screening.check_extraction_configuration()
+
+    assert result.ready is False
+    assert result.client_initialized is False
+    assert result.responses_parse_available is None
+    assert result.failure_reason == "client_initialization_failed"
+    assert result.error_type == "ImportError"
+    assert secret not in result.model_dump_json()
+
+
+def test_extraction_check_redacts_client_setup_error_and_reports_exception_type(
+    synthetic_extraction_provider_config,
+):
+    secret = "constructor-secret-canary"
+
+    def fail_client(stage):
+        try:
+            raise ValueError(secret)
+        except ValueError as cause:
+            raise screening._service_error("configuration_error", stage) from cause
+
+    with patch.object(screening, "_get_openai_client", side_effect=fail_client):
+        result = screening.check_extraction_configuration()
+
+    assert result.ready is False
+    assert result.client_initialized is False
+    assert result.responses_parse_available is None
+    assert result.failure_reason == "client_initialization_failed"
+    assert result.error_type == "ValueError"
+    assert secret not in result.model_dump_json()
+
+
+def test_extraction_check_redacts_cleanup_error(
+    synthetic_extraction_provider_config,
+):
+    secret = "cleanup-secret-canary"
+    client = MagicMock()
+    client.close.side_effect = RuntimeError(secret)
+    with patch.object(screening, "_get_openai_client", return_value=client):
+        result = screening.check_extraction_configuration()
+
+    assert result.ready is False
+    assert result.client_initialized is True
+    assert result.responses_parse_available is True
+    assert result.failure_reason == "client_cleanup_failed"
+    assert result.error_type is None
+    assert secret not in result.model_dump_json()
+
+
 def test_sdk_absence_has_stable_configuration_error():
     real_import = builtins.__import__
 
