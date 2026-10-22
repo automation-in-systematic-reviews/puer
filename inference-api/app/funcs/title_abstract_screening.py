@@ -70,7 +70,11 @@ ScreeningDecision = Literal["included", "excluded"]
 ScreeningConfidence = Literal["high", "moderate", "low"]
 CriterionStatus = Literal["met", "not_met", "unclear"]
 ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh"]
-PromptVersion = Literal["title-abstract-extraction-v1", "title-abstract-screening-v1"]
+PromptVersion = Literal[
+    "title-abstract-extraction-v1",
+    "title-abstract-screening-v1",
+    "title-abstract-screening-v2",
+]
 ScreeningErrorCode = Literal[
     "configuration_error",
     "provider_transient",
@@ -101,7 +105,20 @@ VALID_REASONING_EFFORTS = frozenset(
 
 SCREENING_SCHEMA_VERSION: Literal["1"] = "1"
 EXTRACTION_PROMPT_VERSION: PromptVersion = "title-abstract-extraction-v1"
-PREDICTION_PROMPT_VERSION: PromptVersion = "title-abstract-screening-v1"
+PREDICTION_PROMPT_VERSION: PromptVersion = "title-abstract-screening-v2"
+
+_PREDICTION_INVARIANT_MESSAGES = {
+    "excluded_low_confidence": "excluded predictions cannot have low confidence",
+    "excluded_without_evidenced_not_met": (
+        "excluded predictions require evidenced not_met"
+    ),
+    "unclear_without_included_low": (
+        "unclear criteria require included with low confidence"
+    ),
+    "material_conflict_without_included_low": (
+        "material conflicts require included with low confidence"
+    ),
+}
 
 
 # ==== PROMPTS ====
@@ -151,11 +168,19 @@ conflicting, or insufficient evidence is not evidence of ineligibility. A
 criterion that cannot be assessed from the title and abstract must be unclear,
 not not_met.
 
-Excluded requires at least one not_met criterion with explicit title or abstract
-evidence of a disqualifying condition and cannot have low confidence. If any
-criterion is unclear, return included with low confidence. If any reported
-characteristics conflict is material, return included with low confidence. For
-title-only input, never return high confidence. Every criterion and conflict
+After assessing all criteria and conflicts, check the final decision in this
+priority order; apply the first matching rule:
+1. If any criterion is unclear OR any reported characteristics conflict is
+material, return included with low confidence. This overrides every apparent
+exclusion, even another not_met criterion with explicit disqualifying evidence.
+Do not change an unclear assessment to avoid this override.
+2. Only if neither override applies may you return excluded, and only with at
+least one not_met criterion supported by explicit title or abstract evidence of
+a disqualifying condition. Excluded must have high or moderate confidence, never
+low confidence.
+3. Otherwise, return included with confidence supported by the evidence.
+
+For title-only input, never return high confidence. Every criterion and conflict
 evidence quote must be a non-empty verbatim substring of its named raw source.
 Ask for no chain of thought or hidden reasoning. Return only concise evidence
 summaries in rationales and output matching the structured schema."""
@@ -281,28 +306,34 @@ class _PredictionFields(StrictBaseModel):
     def validate_prediction_invariants(self) -> _PredictionFields:
         """Reject inconsistent scientific decisions rather than rewriting them."""
         if self.decision == "excluded" and self.confidence == "low":
-            raise ValueError("excluded predictions cannot have low confidence")
+            raise ValueError(_PREDICTION_INVARIANT_MESSAGES["excluded_low_confidence"])
         if self.decision == "excluded":
             evidenced_exclusion = any(
                 item.status == "not_met" and bool(item.evidence)
                 for item in self.criterion_assessments
             )
             if not evidenced_exclusion:
-                raise ValueError("excluded predictions require evidenced not_met")
+                raise ValueError(
+                    _PREDICTION_INVARIANT_MESSAGES["excluded_without_evidenced_not_met"]
+                )
         has_unclear = any(
             item.status == "unclear" for item in self.criterion_assessments
         )
         if has_unclear and not (
             self.decision == "included" and self.confidence == "low"
         ):
-            raise ValueError("unclear criteria require included with low confidence")
+            raise ValueError(
+                _PREDICTION_INVARIANT_MESSAGES["unclear_without_included_low"]
+            )
         has_material_conflict = any(
             item.material for item in self.characteristic_conflicts
         )
         if has_material_conflict and not (
             self.decision == "included" and self.confidence == "low"
         ):
-            raise ValueError("material conflicts require included with low confidence")
+            raise ValueError(
+                _PREDICTION_INVARIANT_MESSAGES["material_conflict_without_included_low"]
+            )
         return self
 
 
@@ -315,9 +346,7 @@ class ScreeningProvenance(StrictBaseModel):
 
     model: str
     reasoning_effort: ReasoningEffort
-    prompt_version: Literal[
-        "title-abstract-extraction-v1", "title-abstract-screening-v1"
-    ]
+    prompt_version: PromptVersion
     schema_version: Literal["1"]
 
 
@@ -327,11 +356,34 @@ class TitleAbstractExtractionResponse(StrictBaseModel):
     characteristics: StudyCharacteristics
     provenance: ScreeningProvenance
 
+    @field_validator("provenance")
+    @classmethod
+    def validate_extraction_prompt(
+        cls, value: ScreeningProvenance
+    ) -> ScreeningProvenance:
+        """Accept only extraction provenance for this response stage."""
+        if value.prompt_version != "title-abstract-extraction-v1":
+            raise ValueError("extraction response requires extraction prompt version")
+        return value
+
 
 class StudyScreeningPredictionResponse(_PredictionFields):
     """Public prediction response with server-owned provenance."""
 
     provenance: ScreeningProvenance
+
+    @field_validator("provenance")
+    @classmethod
+    def validate_prediction_prompt(
+        cls, value: ScreeningProvenance
+    ) -> ScreeningProvenance:
+        """Accept current and historical screening provenance, not extraction."""
+        if value.prompt_version not in {
+            "title-abstract-screening-v1",
+            "title-abstract-screening-v2",
+        }:
+            raise ValueError("prediction response requires screening prompt version")
+        return value
 
 
 class StudyScreeningPredictionRequest(TitleAbstractRequest):
@@ -383,6 +435,73 @@ class ExtractionCheckResponse(StrictBaseModel):
 # ==== ERROR BOUNDARY ====
 
 
+# Only local schema names can become diagnostic paths. Array indices collapse
+# to a fixed wildcard; unknown SDK paths and extra provider keys stay opaque.
+_PROVIDER_PARSE_PATH_LABELS = {
+    (): "response",
+    **{
+        (*prefix, name): ".".join((*prefix, name))
+        for prefix, model in (
+            ((), ProviderExtractionResponse),
+            (("characteristics",), ProviderStudyCharacteristics),
+            (("characteristics", "evidence", "*"), CharacteristicEvidence),
+            ((), ProviderScreeningPrediction),
+            (("characteristic_conflicts", "*"), CharacteristicConflict),
+            (("criterion_assessments", "*"), CriterionAssessment),
+            (("characteristic_conflicts", "*", "evidence", "*"), EvidenceQuote),
+            (("criterion_assessments", "*", "evidence", "*"), EvidenceQuote),
+        )
+        for name in model.model_fields
+    },
+}
+_PROVIDER_PARSE_ERROR_LABELS = {
+    label: label
+    for label in (
+        "json_invalid",
+        "missing",
+        "literal_error",
+        "string_type",
+        "string_too_short",
+        "bool_type",
+        "int_type",
+        "greater_than",
+        "list_type",
+        "too_short",
+        "extra_forbidden",
+        "model_type",
+        "value_error",
+    )
+}
+
+
+# Match the complete Pydantic message, never a substring or provider value.
+# Changes in SDK/Pydantic formatting safely fall back to an opaque label.
+_PREDICTION_INVARIANT_LABELS = {
+    f"Value error, {message}": label
+    for label, message in _PREDICTION_INVARIANT_MESSAGES.items()
+}
+
+
+def _provider_parse_labels(exc: ValueError) -> tuple[str, str, str]:
+    """Return finite labels for only the first error, never its contents."""
+    if not isinstance(exc, ValidationError):
+        return "value_error", "unavailable", "unknown"
+    errors = exc.errors(include_url=False, include_context=False, include_input=False)
+    if not errors:
+        return "other", "unavailable", "unknown"
+    error = errors[0]
+    loc = tuple("*" if type(part) is int else part for part in error["loc"])
+    invariant = "not_applicable"
+    if not loc and error["type"] == "value_error":
+        invariant = _PREDICTION_INVARIANT_LABELS.get(error["msg"], "unknown")
+    res = (
+        _PROVIDER_PARSE_ERROR_LABELS.get(error["type"], "other"),
+        _PROVIDER_PARSE_PATH_LABELS.get(loc, "other"),
+        invariant,
+    )
+    return res
+
+
 def _error_message(code: ScreeningErrorCode, stage: ScreeningStage) -> str:
     """Return the stable public message for one error category and stage."""
     messages = {
@@ -414,10 +533,25 @@ def _service_error(
 
 
 def _contract_error(
-    stage: ScreeningStage, phase: ContractFailurePhase
+    stage: ScreeningStage,
+    phase: ContractFailurePhase,
+    *,
+    parse_error: ValueError | None = None,
 ) -> ScreeningServiceError:
     """Log only bounded branch labels, never provider data or exceptions."""
-    _LOGGER.warning("Screening contract failure: stage=%s phase=%s", stage, phase)
+    if parse_error is None:
+        _LOGGER.warning("Screening contract failure: stage=%s phase=%s", stage, phase)
+    else:
+        error_type, field_path, invariant = _provider_parse_labels(parse_error)
+        _LOGGER.warning(
+            "Screening contract failure: stage=%s phase=%s "
+            "error_type=%s field_path=%s invariant=%s",
+            stage,
+            phase,
+            error_type,
+            field_path,
+            invariant,
+        )
     res = _service_error("provider_contract_error", stage)
     return res
 
@@ -653,7 +787,7 @@ def _provider_call(
     except (AttributeError, TypeError) as exc:
         raise _service_error("configuration_error", stage) from exc
     except (ValidationError, ValueError) as exc:
-        raise _contract_error(stage, "provider_parse") from exc
+        raise _contract_error(stage, "provider_parse", parse_error=exc) from exc
     except Exception as exc:
         code = _provider_error_code(exc)
         raise _service_error(code, stage) from exc

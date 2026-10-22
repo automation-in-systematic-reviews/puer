@@ -77,8 +77,16 @@ See [API endpoints](api-endpoints.md) for complete request and response schemas 
 - Client creation: At the LLM provider boundary or during an explicit extraction diagnostic check, not API startup or prompt-service import.
 - Prompt configuration errors (`503`): Missing key, blank or invalid screening setting, missing SDK support, client-construction failure, or missing `responses.parse` capability.
 - Prompt provider errors (`503`): Transport, request, and parsed-output failures, using the documented error categories.
-- Contract diagnostics: Server warnings identify only the stage and a bounded failure phase, such as `provider_parse`, `parsed_output`, `schema_validation`, or `evidence_validation`.
-  They omit exception messages, tracebacks, document text, provider bodies, and credentials; the public error response stays unchanged.
+- Contract diagnostics: Server warnings identify the stage and a bounded failure phase, such as `provider_parse`, `parsed_output`, `schema_validation`, or `evidence_validation`.
+  For `provider_parse`, one warning also reports only the first validation error's allowlisted `error_type`, schema `field_path`, and `invariant` labels.
+  Array indices become `*`; unknown paths or error types become `other`, and a non-validation `ValueError` has `field_path=unavailable`.
+  They omit exception messages, tracebacks, error input and context, arbitrary location tokens, document text, provider bodies, and credentials; the public error response stays unchanged.
+  SDK parsing executes Pydantic model validators as well as JSON and field validation, so `provider_parse error_type=value_error field_path=response` can indicate a prediction decision-invariant failure before evidence grounding.
+  For a root `value_error`, exact matches to the four constant validator messages identify `invariant=excluded_low_confidence`, `excluded_without_evidenced_not_met`, `unclear_without_included_low`, or `material_conflict_without_included_low`.
+  The latter two mean that unclear criteria or a material conflict did not yield included with low confidence; the former two mean excluded with low confidence or excluded without an evidenced `not_met` criterion.
+  Unknown root messages and non-validation `ValueError`s yield `invariant=unknown`; other error types or field paths yield `invariant=not_applicable`.
+  No substring matching is used, and message text is never emitted; SDK/Pydantic message-format changes safely yield `unknown` rather than changing validation.
+  Only the first failure is identified, so simultaneous violations can remain hidden, and these labels cannot establish the cause of a previously uninstrumented failure.
 - Risk-of-bias errors (`503`): Missing credentials or SDK/provider failures; client creation occurs only when `/risk_of_bias/assess` is invoked.
 
 ## Diagnose extraction configuration
@@ -115,6 +123,10 @@ Keep API keys out of command text, tracked files, and documentation; follow [Env
 ## Response provenance and analysis alignment
 
 - Response fields: Effective model, reasoning effort, prompt version, and schema version.
+- Current prompts: Extraction remains `title-abstract-extraction-v1`; screening uses `title-abstract-screening-v2`.
+  Screening v2 makes the existing final aggregation priority explicit: assess all criteria and conflicts, then let any unclear criterion or material conflict override even an evidenced exclusion and require included/low.
+  Decision and evidence validators, provider output field order, model/reasoning configuration, and schema version `1` are unchanged.
+- Historical artifacts: Stage-aware response validation still accepts screening-v1 for prediction and extraction-v1 for extraction without rewriting saved provenance; unknown or wrong-stage versions fail.
 - Source: Server-loaded `OPENAI_STUDY_SCREENING_MODEL` and `OPENAI_STUDY_SCREENING_REASONING_EFFORT`, not caller or provider-response values.
 - Client declaration: Expected provenance in the analysis run manifest.
 - Acceptance and reuse: Returned provenance must match the declared model, reasoning effort, endpoint-specific prompt version, and schema version.

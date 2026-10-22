@@ -455,7 +455,7 @@ StudyScreeningPredictionResponse = {
   "provenance": {
     "model": "gpt-5.6-terra",
     "reasoning_effort": "medium",
-    "prompt_version": "title-abstract-screening-v1",
+    "prompt_version": "title-abstract-screening-v2",
     "schema_version": "1"
   }
 }
@@ -538,6 +538,8 @@ Constraint rules:
 - Confidence: An `excluded` decision cannot have `low` confidence.
 - Unclear criteria: If any criterion is `unclear`, the result must be `included` with `low` confidence.
 - Material conflicts: If any disclosed conflict is material, the result must be `included` with `low` confidence.
+- Aggregation priority: Assess all criteria and conflicts first; either uncertainty override takes precedence over any apparent exclusion, including another evidenced `not_met` criterion.
+  Only without either override may an evidenced disqualifying condition support exclusion; never change an unclear assessment to avoid the override.
 - Evidence interpretation: A criterion that cannot be assessed from the title and abstract is `unclear`, not `not_met`. Missing, conflicting, or insufficient evidence is not evidence of ineligibility.
 - Evidence quotes: Every quote is non-empty and must be a verbatim substring of its named raw `title` or `abstract` source after boundary trimming. The server validates quotes in prediction criterion and conflict evidence.
   The same unique-span whitespace recovery described for extraction applies without changing the screening decision, confidence, or source text.
@@ -551,7 +553,8 @@ Type:
 ScreeningProvenance = {
   model: string
   reasoning_effort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh"
-  prompt_version: "title-abstract-extraction-v1" | "title-abstract-screening-v1"
+  prompt_version: "title-abstract-extraction-v1"
+    | "title-abstract-screening-v1" | "title-abstract-screening-v2"
   schema_version: "1"
 }
 ```
@@ -560,7 +563,9 @@ Constraint rules:
 
 - Ownership: The server creates `provenance` and does not accept it from callers or providers.
 - `model` and `reasoning_effort`: Report the configured screening provider settings described in [LLM configuration](llm-configuration.md).
-- `prompt_version`: Extraction uses `title-abstract-extraction-v1`; prediction uses `title-abstract-screening-v1`.
+- `prompt_version`: New extraction responses use `title-abstract-extraction-v1`; new predictions use `title-abstract-screening-v2`.
+  Saved screening-v1 responses remain valid historical artifacts, retaining their original version.
+  Response validation accepts extraction-v1 only for extraction, and screening-v1 or screening-v2 only for prediction; unknown versions are rejected.
 - `schema_version`: Both responses use `1`.
 
 #### Operational errors

@@ -6,9 +6,12 @@ from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import httpx
+import httpx2
 import openai
 import pytest
-from pydantic import ValidationError
+from openai.lib._pydantic import to_strict_json_schema
+from pydantic import ValidationError, model_validator
+from pydantic_core import PydanticCustomError
 
 from app.funcs import title_abstract_screening as screening
 from app.resources import globals
@@ -641,9 +644,121 @@ def test_injection_like_content_remains_untrusted_and_cannot_set_contract():
     assert "hidden reasoning" in screening.PREDICTION_SYSTEM_PROMPT.lower()
 
 
+def test_prompt_explicitly_prioritizes_uncertainty_before_exclusion():
+    """The prompt orders aggregation after complete criterion assessment."""
+    prompt = screening.PREDICTION_SYSTEM_PROMPT
+    assessment = prompt.index("Assess every operative")
+    final_check = prompt.index("After assessing all criteria and conflicts")
+    override = prompt.index("1. If any criterion is unclear OR")
+    exclusion = prompt.index("2. Only if neither override applies")
+    fallback = prompt.index("3. Otherwise, return included")
+    assert assessment < final_check < override < exclusion < fallback
+    assert "apply the first matching rule" in prompt
+    assert "even another not_met criterion" in prompt
+    assert "Do not change an unclear assessment" in prompt
+    assert "never\nlow confidence" in prompt
+
+
+@pytest.mark.parametrize("has_unclear", [False, True])
+@pytest.mark.parametrize("has_material_conflict", [False, True])
+@pytest.mark.parametrize("decision", ["included", "excluded"])
+@pytest.mark.parametrize("confidence", ["high", "moderate", "low"])
+def test_evidenced_exclusion_never_overrides_uncertainty(
+    has_unclear: bool,
+    has_material_conflict: bool,
+    decision: str,
+    confidence: str,
+) -> None:
+    """Keep exact acceptance and data, including mixed not_met/unclear cases."""
+    assessments = [_criterion("not_met")]
+    if has_unclear:
+        assessments.append(_criterion("unclear", evidence=[]))
+    conflicts = []
+    if has_material_conflict:
+        conflicts.append(
+            {
+                "characteristic": "study_design",
+                "supplied_value": "case_control",
+                "document_value": "prospective_cohort",
+                "material": True,
+                "rationale": "The document states another design.",
+                "evidence": [{"source": "abstract", "quote": "prospective cohort"}],
+            }
+        )
+    payload = {
+        **_prediction_output().model_dump(),
+        "decision": decision,
+        "confidence": confidence,
+        "criterion_assessments": assessments,
+        "characteristic_conflicts": conflicts,
+    }
+    has_override = has_unclear or has_material_conflict
+    valid = (
+        decision == "included" and confidence == "low"
+        if has_override
+        else not (decision == "excluded" and confidence == "low")
+    )
+    if not valid:
+        with pytest.raises(ValidationError):
+            screening.ProviderScreeningPrediction.model_validate(payload)
+        return
+    client = _client_returning(payload)
+    with patch.object(screening, "_get_openai_client", return_value=client):
+        result = screening.predict_study_screening_sync(_prediction_request())
+    assert result.model_dump(exclude={"provenance"}) == payload
+    assert result.provenance.prompt_version == "title-abstract-screening-v2"
+    client.responses.parse.assert_called_once()
+
+
+@pytest.mark.parametrize("stage", ["extraction", "prediction"])
+@pytest.mark.parametrize(
+    "version",
+    [
+        "title-abstract-extraction-v1",
+        "title-abstract-screening-v1",
+        "title-abstract-screening-v2",
+        "title-abstract-extraction-v2",
+        "title-abstract-screening-v3",
+        "unknown",
+    ],
+)
+def test_public_response_provenance_is_stage_aware_and_backward_compatible(
+    stage: str, version: str
+) -> None:
+    """Add screening v2 without relabeling v1 or accepting another stage."""
+    payload = (
+        _extraction_output().model_dump()
+        if stage == "extraction"
+        else _prediction_output().model_dump()
+    )
+    payload["provenance"] = {
+        "model": "historical-model",
+        "reasoning_effort": "medium",
+        "prompt_version": version,
+        "schema_version": "1",
+    }
+    response_type = (
+        screening.TitleAbstractExtractionResponse
+        if stage == "extraction"
+        else screening.StudyScreeningPredictionResponse
+    )
+    accepted_versions = (
+        {"title-abstract-extraction-v1"}
+        if stage == "extraction"
+        else {"title-abstract-screening-v1", "title-abstract-screening-v2"}
+    )
+    if version not in accepted_versions:
+        with pytest.raises(ValidationError):
+            response_type.model_validate(payload)
+        return
+    result = response_type.model_validate(payload)
+    assert result.model_dump() == payload
+    assert list(result.model_dump()) == list(payload)
+
+
 def test_prompts_are_separate_versioned_and_request_concise_evidence():
     assert screening.EXTRACTION_PROMPT_VERSION == "title-abstract-extraction-v1"
-    assert screening.PREDICTION_PROMPT_VERSION == "title-abstract-screening-v1"
+    assert screening.PREDICTION_PROMPT_VERSION == "title-abstract-screening-v2"
     assert screening.SCREENING_SCHEMA_VERSION == "1"
     assert screening.EXTRACTION_SYSTEM_PROMPT != screening.PREDICTION_SYSTEM_PROMPT
     for prompt in (
@@ -1080,9 +1195,10 @@ def test_contract_failure_logs_only_bounded_phase_labels(
     _assert_service_error(exc_info, "provider_contract_error", stage)
     records = [record for record in caplog.records if record.name == screening.__name__]
     assert len(records) == 1
-    assert records[0].getMessage() == (
-        f"Screening contract failure: stage={stage} phase={phase}"
-    )
+    expected = f"Screening contract failure: stage={stage} phase={phase}"
+    if failure == "parse":
+        expected += " error_type=value_error field_path=unavailable invariant=unknown"
+    assert records[0].getMessage() == expected
     assert records[0].exc_info is None
     assert canary not in caplog.text
     assert "phase" not in exc_info.value.detail.model_dump()
@@ -1095,3 +1211,411 @@ def test_import_does_not_construct_openai_client_and_rob_defaults_are_unchanged(
     assert globals.openai_reasoning_effort == "medium"
     assert globals.openai_study_screening_model == "gpt-5.6-terra"
     assert globals.openai_study_screening_reasoning_effort == "medium"
+
+
+def _sdk_client_returning_text(text: str) -> tuple[openai.OpenAI, list[dict]]:
+    """Exercise the installed SDK parser using only an in-memory transport."""
+    requests: list[dict] = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        requests.append(json.loads(request.content))
+        return httpx2.Response(
+            200,
+            json={
+                "id": "resp_offline",
+                "object": "response",
+                "created_at": 0,
+                "model": "offline-model",
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "id": "msg_offline",
+                        "role": "assistant",
+                        "status": "completed",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": text,
+                                "annotations": [],
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+
+    client = openai.OpenAI(
+        api_key="synthetic-offline-key",
+        base_url="https://provider.invalid/v1",
+        max_retries=0,
+        http_client=httpx2.Client(transport=httpx2.MockTransport(respond)),
+    )
+    return client, requests
+
+
+@pytest.mark.parametrize(
+    ("failure", "error_type", "field_path", "invariant", "validator_message"),
+    [
+        ("json", "json_invalid", "response", "not_applicable", None),
+        ("missing", "missing", "confidence", "not_applicable", None),
+        (
+            "enum",
+            "literal_error",
+            "criterion_assessments.*.status",
+            "not_applicable",
+            None,
+        ),
+        (
+            "blank_quote",
+            "value_error",
+            "criterion_assessments.*.evidence.*.quote",
+            "not_applicable",
+            "evidence quote must not be blank",
+        ),
+        ("extra", "extra_forbidden", "other", "not_applicable", None),
+        (
+            "excluded_low",
+            "value_error",
+            "response",
+            "excluded_low_confidence",
+            "excluded predictions cannot have low confidence",
+        ),
+        (
+            "excluded_without_evidence",
+            "value_error",
+            "response",
+            "excluded_without_evidenced_not_met",
+            "excluded predictions require evidenced not_met",
+        ),
+        (
+            "unclear",
+            "value_error",
+            "response",
+            "unclear_without_included_low",
+            "unclear criteria require included with low confidence",
+        ),
+        (
+            "material_conflict",
+            "value_error",
+            "response",
+            "material_conflict_without_included_low",
+            "material conflicts require included with low confidence",
+        ),
+    ],
+)
+def test_real_sdk_parse_failures_have_safe_bounded_labels(
+    failure: str,
+    error_type: str,
+    field_path: str,
+    invariant: str,
+    validator_message: str | None,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """SDK parsing runs unchanged model invariants before evidence validation."""
+    canary = "sensitive-provider-document-and-key-canary"
+    data = _prediction_output().model_dump()
+    data["rationale"] = canary
+    if failure == "missing":
+        del data["confidence"]
+    elif failure == "enum":
+        data["criterion_assessments"][0]["status"] = canary
+    elif failure == "blank_quote":
+        data["criterion_assessments"][0]["evidence"][0]["quote"] = "   "
+    elif failure == "extra":
+        data[canary] = canary
+    elif failure == "excluded_low":
+        data.update(decision="excluded", confidence="low")
+    elif failure == "excluded_without_evidence":
+        data.update(decision="excluded", confidence="moderate")
+    elif failure == "unclear":
+        data["criterion_assessments"][0]["status"] = "unclear"
+    elif failure == "material_conflict":
+        data["characteristic_conflicts"] = [
+            {
+                "characteristic": canary,
+                "supplied_value": canary,
+                "document_value": canary,
+                "material": True,
+                "rationale": canary,
+                "evidence": [{"source": "abstract", "quote": canary}],
+            }
+        ]
+    text = canary if failure == "json" else json.dumps(data)
+    client, requests = _sdk_client_returning_text(text)
+    with (
+        client,
+        patch.object(screening, "_get_openai_client", return_value=client),
+        patch.object(screening, "_ground_quotes") as ground,
+        pytest.raises(screening.ScreeningServiceError) as exc_info,
+    ):
+        screening.predict_study_screening_sync(_prediction_request())
+    _assert_service_error(exc_info, "provider_contract_error", "prediction")
+    cause = exc_info.value.__cause__
+    assert isinstance(cause, ValidationError)
+    if validator_message is not None:
+        error = cause.errors()[0]
+        assert type(error["ctx"]["error"]) is ValueError
+        assert error["ctx"]["error"].args == (validator_message,)
+        assert validator_message not in caplog.text
+    ground.assert_not_called()
+    assert len(requests) == 1
+    wire_format = requests[0]["text"]["format"]
+    assert wire_format["strict"] is True
+    assert wire_format["name"] == "ProviderScreeningPrediction"
+    records = [record for record in caplog.records if record.name == screening.__name__]
+    assert len(records) == 1
+    assert records[0].getMessage() == (
+        "Screening contract failure: stage=prediction phase=provider_parse "
+        f"error_type={error_type} field_path={field_path} invariant={invariant}"
+    )
+    assert records[0].exc_info is None
+    assert records[0].exc_text is None
+    assert canary not in caplog.text
+    assert set(exc_info.value.detail.model_dump()) == {"code", "stage", "message"}
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {},
+        {"confidence": "low", "criterion_assessments": [_criterion("unclear")]},
+        {
+            "confidence": "low",
+            "characteristic_conflicts": [
+                {
+                    "characteristic": "study_design",
+                    "supplied_value": "case_control",
+                    "document_value": "prospective_cohort",
+                    "material": True,
+                    "rationale": "The study designs conflict.",
+                    "evidence": [{"source": "abstract", "quote": "prospective cohort"}],
+                }
+            ],
+        },
+        {
+            "decision": "excluded",
+            "confidence": "moderate",
+            "criterion_assessments": [_criterion("not_met")],
+        },
+        {
+            "decision": "excluded",
+            "confidence": "high",
+            "criterion_assessments": [_criterion("not_met")],
+        },
+    ],
+)
+def test_real_sdk_accepts_valid_prediction_without_changing_request(
+    overrides: dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Keep the structured request and successful screening behavior intact."""
+    prediction = _prediction_output(**overrides)
+    request = _prediction_request()
+    client, requests = _sdk_client_returning_text(prediction.model_dump_json())
+    with (
+        client,
+        patch.object(screening, "_get_openai_client", return_value=client),
+    ):
+        result = screening.predict_study_screening_sync(request)
+    assert result.model_dump() == {
+        **prediction.model_dump(),
+        "provenance": {
+            "model": "gpt-5.6-terra",
+            "reasoning_effort": "medium",
+            "prompt_version": "title-abstract-screening-v2",
+            "schema_version": "1",
+        },
+    }
+    assert requests == [
+        {
+            "model": "gpt-5.6-terra",
+            "reasoning": {"effort": "medium"},
+            "input": [
+                {"role": "system", "content": screening.PREDICTION_SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": screening.build_prediction_user_prompt(request),
+                },
+            ],
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "ProviderScreeningPrediction",
+                    "schema": to_strict_json_schema(
+                        screening.ProviderScreeningPrediction
+                    ),
+                    "strict": True,
+                }
+            },
+        }
+    ]
+    assert not [r for r in caplog.records if r.name == screening.__name__]
+
+
+def test_parse_diagnostic_labels_never_echo_unknown_locations_or_error_types(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Even custom error types, context, and many errors remain opaque."""
+    canary = "sensitive-untrusted-location-and-type-canary"
+    error = ValidationError.from_exception_data(
+        "untrusted-title-canary",
+        [
+            {
+                "type": PydanticCustomError(canary, canary, {"secret": canary}),
+                "loc": ("criterion_assessments", index, canary, "quote"),
+                "input": canary,
+            }
+            for index in range(100)
+        ],
+    )
+    screening._contract_error("prediction", "provider_parse", parse_error=error)
+    records = [record for record in caplog.records if record.name == screening.__name__]
+    assert len(records) == 1
+    assert records[0].getMessage() == (
+        "Screening contract failure: stage=prediction phase=provider_parse "
+        "error_type=other field_path=other invariant=not_applicable"
+    )
+    assert records[0].exc_info is None
+    assert canary not in caplog.text
+    assert "untrusted-title-canary" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "hostile-unknown-root-canary",
+        *[
+            variant
+            for message in screening._PREDICTION_INVARIANT_MESSAGES.values()
+            for variant in (
+                f"hostile-prefix-canary {message}",
+                f"{message} hostile-suffix-canary",
+                message.upper(),
+            )
+        ],
+    ],
+)
+def test_real_sdk_unknown_root_errors_do_not_infer_invariant_from_substrings(
+    message: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An SDK root ValueError must match a complete known message or stay opaque."""
+
+    class UnknownRootPrediction(screening.ProviderScreeningPrediction):
+        @model_validator(mode="after")
+        def reject_unknown_root(self) -> Any:
+            raise ValueError(message)
+
+    client, requests = _sdk_client_returning_text(
+        _prediction_output().model_dump_json()
+    )
+    with client, pytest.raises(screening.ScreeningServiceError) as exc_info:
+        screening._provider_call(
+            client,
+            "prediction",
+            screening.PREDICTION_SYSTEM_PROMPT,
+            "synthetic-offline-input",
+            UnknownRootPrediction,
+        )
+    _assert_service_error(exc_info, "provider_contract_error", "prediction")
+    assert isinstance(exc_info.value.__cause__, ValidationError)
+    assert len(requests) == 1
+    records = [r for r in caplog.records if r.name == screening.__name__]
+    assert len(records) == 1
+    assert records[0].getMessage() == (
+        "Screening contract failure: stage=prediction phase=provider_parse "
+        "error_type=value_error field_path=response invariant=unknown"
+    )
+    assert records[0].exc_info is None
+    assert records[0].exc_text is None
+    assert message not in caplog.text
+
+
+@pytest.mark.parametrize("message", screening._PREDICTION_INVARIANT_MESSAGES.values())
+def test_known_messages_require_root_validation_value_error(message: str) -> None:
+    """Neither arbitrary ValueErrors, field messages, nor custom types identify rules."""
+    assert screening._provider_parse_labels(ValueError(message)) == (
+        "value_error",
+        "unavailable",
+        "unknown",
+    )
+    field_error = ValidationError.from_exception_data(
+        "ProviderScreeningPrediction",
+        [
+            {
+                "type": "value_error",
+                "loc": ("rationale",),
+                "input": message,
+                "ctx": {"error": ValueError(message)},
+            }
+        ],
+    )
+    assert screening._provider_parse_labels(field_error) == (
+        "value_error",
+        "rationale",
+        "not_applicable",
+    )
+    custom_error = ValidationError.from_exception_data(
+        "ProviderScreeningPrediction",
+        [
+            {
+                "type": PydanticCustomError(
+                    "hostile-type", "Value error, {message}", {"message": message}
+                ),
+                "loc": (),
+                "input": message,
+            }
+        ],
+    )
+    assert screening._provider_parse_labels(custom_error) == (
+        "other",
+        "response",
+        "not_applicable",
+    )
+
+
+def test_parse_diagnostic_uses_only_first_error_and_no_context() -> None:
+    """A known later message or a known message in context cannot identify a rule."""
+    message = screening._PREDICTION_INVARIANT_MESSAGES["excluded_low_confidence"]
+    error = ValidationError.from_exception_data(
+        "ProviderScreeningPrediction",
+        [
+            {
+                "type": "value_error",
+                "loc": (),
+                "input": message,
+                "ctx": {"error": ValueError("unknown-canary"), "secret": message},
+            },
+            {
+                "type": "value_error",
+                "loc": (),
+                "input": "synthetic",
+                "ctx": {"error": ValueError(message)},
+            },
+        ],
+    )
+    assert screening._provider_parse_labels(error) == (
+        "value_error",
+        "response",
+        "unknown",
+    )
+
+
+def test_parse_diagnostic_labels_cover_extraction_and_hide_array_indices() -> None:
+    """The shared boundary logs schema names, never input keys or indices."""
+    error = ValidationError.from_exception_data(
+        "ProviderExtractionResponse",
+        [
+            {
+                "type": "string_type",
+                "loc": ("characteristics", "evidence", 999999, "quote"),
+                "input": 123,
+            }
+        ],
+    )
+    assert screening._provider_parse_labels(error) == (
+        "string_type",
+        "characteristics.evidence.*.quote",
+        "not_applicable",
+    )
