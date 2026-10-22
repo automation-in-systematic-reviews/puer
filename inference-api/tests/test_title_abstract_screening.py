@@ -297,6 +297,86 @@ def test_nonblank_evidence_quote_preserves_exact_whitespace():
     assert quote.quote == "  exact phrase  "
 
 
+def test_extraction_copies_unique_raw_whitespace_without_mutating_input() -> None:
+    """Whitespace recovery still returns verbatim evidence from raw text."""
+    source = "A  prospective\tcohort examined colorectal  cancer."
+    request = screening.TitleAbstractRequest(title="Study title", abstract=source)
+    provider_output = _extraction_output()
+    client = _client_returning(provider_output)
+    with patch.object(screening, "_get_openai_client", return_value=client):
+        result = screening.extract_title_abstract_sync(request)
+    quote = result.characteristics.evidence[0]
+    assert quote.quote == "prospective\tcohort"
+    assert quote.characteristic == "study_design"
+    assert quote.quote in source
+    assert request.abstract == source
+    assert provider_output.characteristics.evidence[0].quote == "prospective cohort"
+    client.responses.parse.assert_called_once()
+
+
+def test_prediction_reanchors_assessment_and_conflict_quotes() -> None:
+    """Both evidence collections preserve final exact source grounding."""
+    source = "A prospective\tcohort examined colorectal  cancer."
+    request = _prediction_request(abstract=source)
+    conflict = {
+        "characteristic": "study_design",
+        "supplied_value": "case_control",
+        "document_value": "prospective_cohort",
+        "material": True,
+        "rationale": "The study designs conflict.",
+        "evidence": [{"source": "abstract", "quote": "prospective cohort"}],
+    }
+    provider_output = _prediction_output(
+        confidence="low", characteristic_conflicts=[conflict]
+    )
+    client = _client_returning(provider_output)
+    with patch.object(screening, "_get_openai_client", return_value=client):
+        result = screening.predict_study_screening_sync(request)
+    assert result.criterion_assessments[0].evidence[0].quote == "colorectal  cancer"
+    assert result.characteristic_conflicts[0].evidence[0].quote == "prospective\tcohort"
+    assert result.decision == provider_output.decision
+    assert result.confidence == provider_output.confidence
+    assert request.abstract == source
+    assert (
+        provider_output.criterion_assessments[0].evidence[0].quote
+        == "colorectal cancer"
+    )
+    client.responses.parse.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("source", "quote"),
+    [
+        ("A  prospective cohort study.", "Prospective cohort"),
+        ("A  prospective cohort study.", "prospective-cohort"),
+        ("A  prospective cohort and A\tprospective cohort.", "A prospective cohort"),
+        ("a  a  a", "a a"),
+        ("A  prospective cohort study.", "retrospective cohort"),
+    ],
+)
+def test_quote_recovery_rejects_changed_content_and_ambiguous_spans(
+    source: str, quote: str
+) -> None:
+    """Recovery never invents text or selects among ambiguous raw spans."""
+    request = screening.TitleAbstractRequest(title="Study title", abstract=source)
+    evidence = screening.EvidenceQuote(source="abstract", quote=quote)
+    with pytest.raises(ValueError):
+        screening._ground_quotes([evidence], request)
+    assert evidence.quote == quote
+
+
+def test_quote_recovery_preserves_verbatim_text_and_named_source() -> None:
+    """Already exact quotes remain unchanged and cannot switch fields."""
+    request = screening.TitleAbstractRequest(
+        title="prefix  exact phrase  suffix", abstract="Another abstract."
+    )
+    quote = screening.EvidenceQuote(source="title", quote="  exact phrase  ")
+    assert screening._ground_quotes([quote], request)[0] is quote
+    wrong_source = quote.model_copy(update={"source": "abstract"})
+    with pytest.raises(ValueError):
+        screening._ground_quotes([wrong_source], request)
+
+
 def test_complete_prediction_uses_exact_provider_contract_and_provenance():
     request = _prediction_request()
     client = _client_returning(_prediction_output())
@@ -937,6 +1017,76 @@ def test_async_wrappers_delegate_through_to_thread():
             prediction_result
         )
     assert to_thread.call_count == 2
+
+
+@pytest.mark.parametrize("stage", ["extraction", "prediction"])
+@pytest.mark.parametrize(
+    ("failure", "phase"),
+    [
+        ("parse", "provider_parse"),
+        ("missing", "parsed_output"),
+        ("schema", "schema_validation"),
+        ("quote", "evidence_validation"),
+    ],
+)
+def test_contract_failure_logs_only_bounded_phase_labels(
+    stage: screening.ScreeningStage,
+    failure: str,
+    phase: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Diagnose contract branches without logging input or provider details."""
+    canary = "sensitive-provider-and-document-canary"
+    if stage == "extraction":
+        parsed: Any = _extraction_output()
+        if failure == "quote":
+            parsed = _extraction_output(
+                evidence=[
+                    {
+                        "characteristic": "study_design",
+                        "source": "abstract",
+                        "quote": canary,
+                    }
+                ]
+            )
+    else:
+        parsed = _prediction_output()
+        if failure == "quote":
+            parsed = _prediction_output(
+                criterion_assessments=[
+                    _criterion(evidence=[{"source": "abstract", "quote": canary}])
+                ]
+            )
+    if failure == "missing":
+        parsed = None
+    elif failure == "schema":
+        parsed = {"unexpected": canary}
+    client = _client_returning(parsed)
+    if failure == "parse":
+        client.responses.parse.side_effect = ValueError(canary)
+    with (
+        patch.object(screening, "_get_openai_client", return_value=client),
+        pytest.raises(screening.ScreeningServiceError) as exc_info,
+    ):
+        if stage == "extraction":
+            screening.extract_title_abstract_sync(
+                screening.TitleAbstractRequest(
+                    title=canary,
+                    abstract="A prospective cohort examined colorectal cancer.",
+                )
+            )
+        else:
+            screening.predict_study_screening_sync(_prediction_request())
+    _assert_service_error(exc_info, "provider_contract_error", stage)
+    records = [record for record in caplog.records if record.name == screening.__name__]
+    assert len(records) == 1
+    assert records[0].getMessage() == (
+        f"Screening contract failure: stage={stage} phase={phase}"
+    )
+    assert records[0].exc_info is None
+    assert canary not in caplog.text
+    assert "phase" not in exc_info.value.detail.model_dump()
+    client.responses.parse.assert_called_once()
 
 
 def test_import_does_not_construct_openai_client_and_rob_defaults_are_unchanged():

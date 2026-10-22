@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import re
 from collections.abc import Sequence
 from typing import Any, Literal
 
@@ -76,6 +78,15 @@ ScreeningErrorCode = Literal[
     "provider_contract_error",
 ]
 ScreeningStage = Literal["extraction", "prediction"]
+ContractFailurePhase = Literal[
+    "provider_parse",
+    "parsed_output",
+    "schema_validation",
+    "evidence_validation",
+    "prediction_invariants",
+    "unresolved_criteria",
+]
+_LOGGER = logging.getLogger(__name__)
 ExtractionCheckFailureReason = Literal[
     "missing_provider_key",
     "missing_model",
@@ -402,6 +413,15 @@ def _service_error(
     return res
 
 
+def _contract_error(
+    stage: ScreeningStage, phase: ContractFailurePhase
+) -> ScreeningServiceError:
+    """Log only bounded branch labels, never provider data or exceptions."""
+    _LOGGER.warning("Screening contract failure: stage=%s phase=%s", stage, phase)
+    res = _service_error("provider_contract_error", stage)
+    return res
+
+
 def _configuration_check_values() -> tuple[bool, bool, bool]:
     """Return the same local configuration predicates used by extraction."""
     key = globals.openai_api_key
@@ -633,16 +653,16 @@ def _provider_call(
     except (AttributeError, TypeError) as exc:
         raise _service_error("configuration_error", stage) from exc
     except (ValidationError, ValueError) as exc:
-        raise _service_error("provider_contract_error", stage) from exc
+        raise _contract_error(stage, "provider_parse") from exc
     except Exception as exc:
         code = _provider_error_code(exc)
         raise _service_error(code, stage) from exc
     try:
         parsed = getattr(response, "output_parsed", None)
     except Exception as exc:
-        raise _service_error("provider_contract_error", stage) from exc
+        raise _contract_error(stage, "parsed_output") from exc
     if parsed is None:
-        raise _service_error("provider_contract_error", stage)
+        raise _contract_error(stage, "parsed_output")
     return parsed
 
 
@@ -660,6 +680,34 @@ def _validate_quotes(
     sources = {"title": request.title, "abstract": request.abstract or ""}
     if any(item.quote not in sources[item.source] for item in evidence):
         raise ValueError("evidence quote is absent from its named source")
+
+
+def _ground_quotes(
+    evidence: Sequence[EvidenceQuote], request: TitleAbstractRequest
+) -> list[EvidenceQuote]:
+    """Copy unique whitespace-equivalent source spans, then validate exactly.
+
+    Existing verbatim quotes are unchanged. Other words, punctuation, case,
+    and ambiguous matches remain contract failures. Source text is immutable.
+    """
+    sources = {"title": request.title, "abstract": request.abstract or ""}
+    res: list[EvidenceQuote] = []
+    for item in evidence:
+        source = sources[item.source]
+        if item.quote in source:
+            res.append(item)
+            continue
+        tokens = item.quote.split()
+        if not tokens:
+            raise ValueError("evidence quote is absent from its named source")
+        pattern = r"\s+".join(re.escape(token) for token in tokens)
+        matches = re.finditer(f"(?=({pattern}))", source)
+        match = next(matches, None)
+        if match is None or next(matches, None) is not None:
+            raise ValueError("evidence quote is absent or ambiguous in its source")
+        res.append(item.model_copy(update={"quote": match.group(1)}))
+    _validate_quotes(res, request)
+    return res
 
 
 def _provenance(prompt_version: PromptVersion) -> ScreeningProvenance:
@@ -689,10 +737,14 @@ def extract_title_abstract_sync(
         user_prompt=build_extraction_user_prompt(request),
         schema=ProviderExtractionResponse,
     )
+    phase: ContractFailurePhase = "schema_validation"
     try:
         provider_output = ProviderExtractionResponse.model_validate(_model_data(parsed))
-        _validate_quotes(provider_output.characteristics.evidence, request)
+        phase = "evidence_validation"
+        evidence = _ground_quotes(provider_output.characteristics.evidence, request)
+        phase = "schema_validation"
         data = provider_output.characteristics.model_dump()
+        data["evidence"] = [item.model_dump() for item in evidence]
         if request.abstract is None:
             limitations = list(data["limitations"])
             if TITLE_ONLY_LIMITATION not in limitations:
@@ -704,7 +756,7 @@ def extract_title_abstract_sync(
             provenance=_provenance(EXTRACTION_PROMPT_VERSION),
         )
     except (ValidationError, ValueError, TypeError) as exc:
-        raise _service_error("provider_contract_error", stage) from exc
+        raise _contract_error(stage, phase) from exc
     return res
 
 
@@ -714,7 +766,7 @@ def predict_study_screening_sync(
     """Predict and validate conservative screening output synchronously."""
     stage: ScreeningStage = "prediction"
     if UNRESOLVED_CRITERIA_TOKEN in request.criteria:
-        raise _service_error("provider_contract_error", stage)
+        raise _contract_error(stage, "unresolved_criteria")
     client = _get_openai_client(stage)
     parsed = _provider_call(
         client=client,
@@ -723,22 +775,36 @@ def predict_study_screening_sync(
         user_prompt=build_prediction_user_prompt(request),
         schema=ProviderScreeningPrediction,
     )
+    phase: ContractFailurePhase = "schema_validation"
     try:
         provider_output = ProviderScreeningPrediction.model_validate(
             _model_data(parsed)
         )
-        for assessment in provider_output.criterion_assessments:
-            _validate_quotes(assessment.evidence, request)
-        for conflict in provider_output.characteristic_conflicts:
-            _validate_quotes(conflict.evidence, request)
+        phase = "evidence_validation"
+        assessments = [
+            item.model_copy(update={"evidence": _ground_quotes(item.evidence, request)})
+            for item in provider_output.criterion_assessments
+        ]
+        conflicts = [
+            item.model_copy(update={"evidence": _ground_quotes(item.evidence, request)})
+            for item in provider_output.characteristic_conflicts
+        ]
+        provider_output = provider_output.model_copy(
+            update={
+                "criterion_assessments": assessments,
+                "characteristic_conflicts": conflicts,
+            }
+        )
+        phase = "prediction_invariants"
         if request.abstract is None and provider_output.confidence == "high":
             raise ValueError("title-only predictions cannot have high confidence")
+        phase = "schema_validation"
         res = StudyScreeningPredictionResponse(
             **provider_output.model_dump(),
             provenance=_provenance(PREDICTION_PROMPT_VERSION),
         )
     except (ValidationError, ValueError, TypeError) as exc:
-        raise _service_error("provider_contract_error", stage) from exc
+        raise _contract_error(stage, phase) from exc
     return res
 
 

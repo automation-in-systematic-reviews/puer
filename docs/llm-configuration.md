@@ -77,6 +77,8 @@ See [API endpoints](api-endpoints.md) for complete request and response schemas 
 - Client creation: At the LLM provider boundary or during an explicit extraction diagnostic check, not API startup or prompt-service import.
 - Prompt configuration errors (`503`): Missing key, blank or invalid screening setting, missing SDK support, client-construction failure, or missing `responses.parse` capability.
 - Prompt provider errors (`503`): Transport, request, and parsed-output failures, using the documented error categories.
+- Contract diagnostics: Server warnings identify only the stage and a bounded failure phase, such as `provider_parse`, `parsed_output`, `schema_validation`, or `evidence_validation`.
+  They omit exception messages, tracebacks, document text, provider bodies, and credentials; the public error response stays unchanged.
 - Risk-of-bias errors (`503`): Missing credentials or SDK/provider failures; client creation occurs only when `/risk_of_bias/assess` is invoked.
 
 ## Diagnose extraction configuration

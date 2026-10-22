@@ -372,6 +372,9 @@ Constraint rules:
 - Arrays: `exposures`, `comparators`, `outcomes`, `outcome_types`, `effect_measures`, `analysis_methods`, `evidence`, and `limitations` are required arrays and may be empty.
 - Evidence: Each extraction evidence item has non-empty `characteristic`, `source` of `title` or `abstract`, and a non-empty, non-blank `quote`.
 - Evidence source: Each quote must be a verbatim substring of its named raw field after boundary trimming. The server validates extraction evidence quotes against the raw title or abstract.
+- Whitespace recovery: If a provider quote differs only in whitespace, the server may copy a unique matching span verbatim from the same source field.
+  Existing exact quotes and raw document text remain unchanged.
+  Changed words, punctuation, case, ambiguous spans, or a different source field are not accepted by this recovery.
 - Inference: The service does not infer unsupported facts such as peer-review status, an unstated comparator, or an unstated effect measure.
 
 ### POST /study_screening/predict/
@@ -537,6 +540,7 @@ Constraint rules:
 - Material conflicts: If any disclosed conflict is material, the result must be `included` with `low` confidence.
 - Evidence interpretation: A criterion that cannot be assessed from the title and abstract is `unclear`, not `not_met`. Missing, conflicting, or insufficient evidence is not evidence of ineligibility.
 - Evidence quotes: Every quote is non-empty and must be a verbatim substring of its named raw `title` or `abstract` source after boundary trimming. The server validates quotes in prediction criterion and conflict evidence.
+  The same unique-span whitespace recovery described for extraction applies without changing the screening decision, confidence, or source text.
 - Provider obligation: The provider is instructed to assess every operative criterion and disclose every detected conflict, but exhaustive semantic criterion or conflict detection in free text is a provider obligation rather than deterministic proof by the application.
 
 #### Provenance
