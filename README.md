@@ -11,6 +11,7 @@ Key locations:
 - `docs/llm-configuration.md`: canonical model, reasoning, provider, and provenance reference
 - `docs/local-development.md`: native development without Docker Compose
 - `inference-api/app`: API code
+- `justfile`: development recipes, runnable from the repository root
 
 ## Usage
 
@@ -68,7 +69,8 @@ docker-compose build
 
 ## Development
 
-The Docker Compose service mounts `./inference-api` into the container.
+The Docker Compose service mounts `./inference-api` at `/inference-api` and the root `justfile` read-only at `/justfile`.
+The image also includes `/justfile`, and its recipes run inside `/inference-api`.
 The API is started with Uvicorn reload enabled, so changes under `inference-api/app` restart the service.
 Model loading can take time after each restart.
 The image builds the project's dependencies into the named `inference-api` Conda environment.
@@ -84,11 +86,14 @@ Run development commands from inside the container:
 
 ```sh
 just --list
+just checkhealth
 just test
 just fmt
 just lint
 ```
 
+`just checkhealth` checks the Conda environment and required threshold dataset, and warns about missing BERT model directories without failing for them.
+The health checks do not install dependencies or start the API.
 `just test` runs pytest.
 `just fmt` applies Ruff lint fixes, including import sorting, and formats `app` and `tests`.
 `just lint` checks Ruff formatting, runs Ruff linting, and runs `ty` on `app` and `tests`.

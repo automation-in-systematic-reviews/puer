@@ -9,6 +9,7 @@ services:
       - ${INFERENCE_API_PORT:-12306}:80
     volumes:
       - ./inference-api:/inference-api
+      - ./justfile:/justfile:ro
     environment:
       - WCRF_API_KEY=${WCRF_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}

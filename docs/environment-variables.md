@@ -63,7 +63,8 @@ Restart the native API or recreate the container after configuration changes.
 
 ## Native setup
 
-Run `just run-local` or `just run-local-no-bert` from `inference-api` in the same shell that holds the exported variables.
+Run `just run-local` or `just run-local-no-bert` from the PUER repository root (`puer/`) in the same shell that holds the exported variables.
+The recipes run the API inside `inference-api/`.
 The following Bash commands hide the required inbound key and do not put its literal value in command history.
 
 ```bash
@@ -117,17 +118,17 @@ Keep real key values in the private local `.env` or process environment, never i
 
 - Type: string.
 - Default: none supplied by PUER.
-- Scope: `just` recipe preflight checks.
+- Scope: `just check-conda` active-environment detection.
 - Purpose: Identifies the active Conda environment.
-- Constraints: The recipes require the value `inference-api`.
+- Constraints: The health check recognizes an active `inference-api` prefix; otherwise it checks for the named environment through Micromamba or Conda.
 
 ### CONDA_PREFIX
 
 - Type: non-empty path string.
 - Default: none supplied by PUER.
-- Scope: `just` recipe preflight checks and uv environment selection.
+- Scope: `just check-conda` active-environment detection and uv environment selection.
 - Purpose: Identifies the active Conda prefix.
-- Constraints: The recipes require a non-empty value and expect `python`, `uv`, and `just` under this prefix.
+- Constraints: Runtime and quality recipes require a non-empty value and target this prefix with uv; activate `inference-api` and verify its tools as described in [Local development](local-development.md).
 
 ### UV_PROJECT_ENVIRONMENT
 

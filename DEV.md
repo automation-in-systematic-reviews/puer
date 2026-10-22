@@ -20,11 +20,17 @@ uv owns all remaining Python runtime and development dependencies declared in `i
 
 ## Just recipes
 
-Run recipes from `inference-api` with the named `inference-api` Conda environment active.
+Run recipes from the PUER repository root (`puer/`).
+Activate the named `inference-api` Conda environment for runtime and quality recipes; health checks do not require activation.
+The root `justfile` runs recipe commands inside `inference-api/`, where the Python project and application paths live.
+Invoking `just` from `inference-api/` also discovers the root justfile.
 
 - `just` runs the default recipe, which lists the available recipes in unsorted order.
 - `just --list` lists the available recipes directly.
-- `just init` synchronizes the locked uv dependencies into the active Conda environment.
+- `just checkhealth` runs all member health checks without installing dependencies, downloading assets, or starting the API.
+- `just check-conda` checks that the named `inference-api` Conda environment exists.
+- `just check-datasets` checks the required threshold dataset and fails if its contents are missing.
+- `just check-bert-models` checks the two BERT model directories and only warns when either is missing.
 - `just run-local` starts Uvicorn with reload on port 12306 for native local development.
 - `just run-local-no-bert` uses the same local server settings without loading local BERT models or threshold data; see [Local development](docs/local-development.md) for route availability.
 - `just test` runs the pytest suite.

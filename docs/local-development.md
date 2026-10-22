@@ -11,12 +11,13 @@ Run `git lfs install` before obtaining LFS-managed assets.
 
 ## Create and activate the environment
 
-Run all commands in this guide from `inference-api`.
+Run all commands in this guide from the PUER repository root (`puer/`).
+The root `justfile` runs recipe commands inside `inference-api/`; `just` also discovers it when invoked from that subdirectory.
 Create the environment and activate it as a replacement for the current environment.
 Use `micromamba activate inference-api`, not `micromamba activate --stack inference-api`, so tools cannot leak in from another environment.
 
 ```sh
-micromamba env create -f environment.yml
+micromamba env create -f inference-api/environment.yml
 micromamba activate inference-api
 ```
 
@@ -33,7 +34,8 @@ Python must report version 3.12, and all three command paths must be under `$CON
 Synchronize the locked uv dependencies after those checks pass.
 
 ```sh
-just init
+UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX" \
+  uv --directory inference-api sync --locked --inexact
 ```
 
 ### Recreate an environment from before the uv migration
@@ -45,27 +47,29 @@ Deactivate `inference-api` before removing it.
 ```sh
 micromamba deactivate
 micromamba env remove --name inference-api
-micromamba env create -f environment.yml
+micromamba env create -f inference-api/environment.yml
 micromamba activate inference-api
 python --version
 command -v python
 command -v uv
 command -v just
-just init
+UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX" \
+  uv --directory inference-api sync --locked --inexact
 ```
 
 ### Update an environment created after the migration
 
-After the initial migration, update the environment following later changes to `environment.yml`, then activate it normally and synchronize the locked uv dependencies again.
+After the initial migration, update the environment following later changes to `inference-api/environment.yml`, then activate it normally and synchronize the locked uv dependencies again.
 
 ```sh
-micromamba env update -f environment.yml --prune
+micromamba env update -f inference-api/environment.yml --prune
 micromamba activate inference-api
-just init
+UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX" \
+  uv --directory inference-api sync --locked --inexact
 ```
 
-The recipes reject an active Conda environment other than `inference-api`, an unsupported Python version, or development tools inherited from another environment.
-`just init` makes uv target the active Conda prefix, so dependencies are not installed into a nested `.venv`.
+Runtime and quality recipes require a nonempty Conda prefix and make uv target it instead of creating a nested `.venv`.
+Verify the environment name, Python version, and command paths using the checks above; the recipes no longer perform those preflight checks.
 
 ## Obtain required assets
 
@@ -79,10 +83,31 @@ Skip these asset downloads when using `just run-local-no-bert`; the Python depen
 Obtain the public ALBERT model from Hugging Face.
 
 ```sh
-git clone https://huggingface.co/textattack/albert-base-v2-imdb models/albert-base-v2-imdb
+git clone https://huggingface.co/textattack/albert-base-v2-imdb \
+  inference-api/models/albert-base-v2-imdb
 ```
 
 Contact the project maintainer for the private screening model at `models/cup_multi_gpu_24_05_30/` and the threshold data at `data/summary_26_01_05.csv`.
+
+## Check local health
+
+Run the offline, read-only health checks from the repository root.
+They do not require an activated environment or application keys.
+
+```sh
+just checkhealth
+```
+
+The aggregate runs every member check, even after a failure:
+
+- `just check-conda` checks for the named `inference-api` environment using the active prefix, Micromamba, or Conda.
+- `just check-datasets` requires a nonempty `inference-api/data/summary_26_01_05.csv` and rejects Git LFS pointer files.
+- `just check-bert-models` checks for `inference-api/models/albert-base-v2-imdb/` and `inference-api/models/cup_multi_gpu_24_05_30/`, warning without failing when either directory is missing.
+
+Missing environments or dataset contents make `checkhealth` exit nonzero.
+Model checks verify directory presence only, not model loading or integrity.
+These checks do not install dependencies, download assets, read API keys, or start the API.
+They are not prerequisites for tests or `run-local-no-bert`, which do not require local model or threshold assets.
 
 ## Configure local environment variables
 
@@ -97,14 +122,17 @@ With the `inference-api` Conda environment active, run the focused prompt-based 
 It runs the extraction route, prediction route, and screening-service tests with mocked services or OpenAI clients and does not require or permit paid provider calls.
 
 ```sh
-UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX" uv run --offline --locked python -m pytest -vv tests/test_data_extraction.py tests/test_study_screening.py tests/test_title_abstract_screening.py
+UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX" \
+  uv --directory inference-api run --offline --locked python -m pytest -vv \
+  tests/test_data_extraction.py tests/test_study_screening.py \
+  tests/test_title_abstract_screening.py
 ```
 
 Run the full offline suite with the following command.
 The full suite mocks local models, threshold loading, and OpenAI-backed behavior and does not require or permit paid provider calls.
 
 ```sh
-UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX" uv run --offline --locked python -m pytest -vv
+UV_OFFLINE=true just test
 ```
 
 The focused and full commands require an initialized local environment and use only locally installed locked dependencies.
@@ -144,9 +172,9 @@ If an LLM request returns a configuration `503`, check [LLM configuration](llm-c
 In full-model mode, if `/check` returns `false` or model loading fails, confirm that all three required asset paths exist exactly as listed above.
 Request the private screening model or threshold data from the project maintainer when either private asset is unavailable, or use `just run-local-no-bert` for prompt-based development.
 If a legacy encode route reports that local BERT models are disabled, restart with local model loading enabled and the required assets available.
-If `just` reports that no justfile or recipes are available, confirm that the current directory is `inference-api`.
+If `just` reports that no justfile or recipes are available, confirm that the current directory is the PUER repository root (`puer/`) or one of its subdirectories.
 If the shell reports `just: command not found`, activate `inference-api` normally and check `$CONDA_PREFIX/bin/just`.
 Recreate the environment using the migration procedure above only if that executable remains absent.
-If a recipe reports that Python, uv, or just came from an unexpected path, activate `inference-api` without `--stack` and confirm that each command resolves under `$CONDA_PREFIX/bin`.
+If Python, uv, or just resolves to an unexpected path, activate `inference-api` without `--stack` and confirm that each command resolves under `$CONDA_PREFIX/bin`.
 If uv reports that the project environment is incompatible and cannot be recreated because it is not a virtual environment, recreate the Conda environment rather than asking uv to replace its prefix.
-If Python uses unexpected dependencies after the command-path checks pass, run `just init` and rerun the offline verification command.
+If Python uses unexpected dependencies after the command-path checks pass, repeat the locked uv synchronization above and rerun the offline verification command.

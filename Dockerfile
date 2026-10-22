@@ -10,3 +10,4 @@ WORKDIR /inference-api
 COPY inference-api/pyproject.toml inference-api/uv.lock ./
 RUN uv sync --locked --inexact && \
     uv cache clean
+COPY justfile /justfile
