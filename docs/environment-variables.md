@@ -13,6 +13,17 @@ The application reads its configuration in `inference-api/app/resources/globals.
 - Purpose: Supplies the key that the server compares with the `X-API-Key` header for the authenticated legacy screening, prompt extraction, prompt prediction, and risk-of-bias endpoints.
 - Constraints: Required when the API starts. This is the key that a PUER client sends to the PUER server, not an OpenAI credential.
 
+### PUER_LOAD_BERT_MODELS
+
+- Type: boolean, accepting `true`/`false` and `1`/`0`.
+- Default: `true`.
+- Scope: API startup, local encode routes, and the `/check` asset check.
+- Purpose: Controls loading of the local ALBERT classifier, study-screening embedding model, and screening threshold CSV.
+- Disabled behavior: `false` skips their loading and excludes their paths from `/check`; `/debug/encode` and `/study_screening/encode` return `503` for otherwise valid requests.
+- Unchanged behavior: Prompt extraction, prompt prediction, and risk-of-bias routes retain their provider and authentication requirements.
+- Constraints: Required Python dependencies and `WCRF_API_KEY` are unchanged; restart the API after changing this variable.
+- Native recipe: `just run-local-no-bert` sets this variable to `false` for its API process, overriding any value in `.env`.
+
 ### OPENAI_API_KEY
 
 - Type: string or null.
@@ -52,7 +63,7 @@ Restart the native API or recreate the container after configuration changes.
 
 ## Native setup
 
-Run `just run-local` from `inference-api` in the same shell that holds the exported variables.
+Run `just run-local` or `just run-local-no-bert` from `inference-api` in the same shell that holds the exported variables.
 The following Bash commands hide the required inbound key and do not put its literal value in command history.
 
 ```bash
@@ -98,7 +109,7 @@ Keep real key values in the private local `.env` or process environment, never i
 - Default: The Compose defaults apply only to variables shown below.
 - Scope: `docker-compose.yml` interpolation and the `inference-api` container.
 - Purpose: Forwards selected server configuration into the container.
-- Constraints: The current Compose service forwards only `WCRF_API_KEY`, `OPENAI_API_KEY`, `OPENAI_MODEL`, and `OPENAI_REASONING_EFFORT` into the container. It does not currently forward the screening-specific model or reasoning overrides, so those variables are not documented as Docker overrides here.
+- Constraints: The current Compose service forwards only `WCRF_API_KEY`, `OPENAI_API_KEY`, `OPENAI_MODEL`, and `OPENAI_REASONING_EFFORT` into the container. It does not currently forward `PUER_LOAD_BERT_MODELS` or the screening-specific model and reasoning overrides, so those variables are not documented as Docker overrides here.
 
 ## Task-runner environment
 

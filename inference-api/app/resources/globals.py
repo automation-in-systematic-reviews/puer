@@ -12,6 +12,7 @@ env = Env()
 env.read_env()
 
 api_keys = [env("WCRF_API_KEY")]
+load_bert_models = env.bool("PUER_LOAD_BERT_MODELS", True)
 
 openai_api_key = env("OPENAI_API_KEY", None)
 openai_model = env("OPENAI_MODEL", "gpt-5.2")
@@ -30,4 +31,4 @@ paths = {
 }
 
 threshold = None
-thresholds: DataFrame
+thresholds: DataFrame | None = None

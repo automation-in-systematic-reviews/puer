@@ -1,7 +1,6 @@
 from typing import List, Optional
 
-import torch
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
 
 from app.resources import globals
@@ -30,6 +29,8 @@ ExampleOutputBatch = List[str]
 
 
 def example_encode_inference(text: str, tokenizer, model) -> str:
+    import torch
+
     inputs = tokenizer(text, return_tensors="pt")
     print(inputs)
 
@@ -47,6 +48,9 @@ router = APIRouter()
 
 @router.post("/debug/encode")
 async def post_encode(payload: ExampleInputBatch) -> ExampleOutputBatch:
+    if not globals.load_bert_models:
+        raise HTTPException(status_code=503, detail="Local BERT models are disabled.")
+
     # example taken from
     # https://huggingface.co/docs/transformers/model_doc/albert#transformers.AlbertForSequenceClassification
     tokenizer = globals.models["albert-imdb"]["tokenizer"]

@@ -26,6 +26,7 @@ Run recipes from `inference-api` with the named `inference-api` Conda environmen
 - `just --list` lists the available recipes directly.
 - `just init` synchronizes the locked uv dependencies into the active Conda environment.
 - `just run-local` starts Uvicorn with reload on port 12306 for native local development.
+- `just run-local-no-bert` uses the same local server settings without loading local BERT models or threshold data; see [Local development](docs/local-development.md) for route availability.
 - `just test` runs the pytest suite.
 - `just fmt` applies Ruff lint fixes, including import sorting, and formats `app` and `tests`.
 - `just lint` checks Ruff formatting, runs Ruff linting, and runs `ty` on `app` and `tests` without modifying source files.

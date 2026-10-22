@@ -21,6 +21,11 @@ run: ensure-conda
 run-local: ensure-conda
     UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX" uv run --locked uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 12306
 
+# Start the API locally without BERT models or threshold data.
+[group('application')]
+run-local-no-bert: ensure-conda
+    PUER_LOAD_BERT_MODELS=false UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX" uv run --locked uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 12306
+
 # ==== Quality ====
 
 # Run the pytest suite.

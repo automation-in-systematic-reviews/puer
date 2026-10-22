@@ -1,9 +1,7 @@
 from contextlib import asynccontextmanager
 
-import transformers
 from fastapi import Depends, FastAPI
 from loguru import logger
-from sentence_transformers import SentenceTransformer
 
 from app.apis import data_extraction, debug, risk_of_bias, study_screening
 from app.funcs import title_abstract_screening
@@ -14,23 +12,35 @@ from app.resources.security import api_key_auth
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("api config info")
-    logger.info("api init: init models")
-    globals.models["albert-imdb"] = {
-        "tokenizer": transformers.AutoTokenizer.from_pretrained(
-            globals.paths["albert_imdb"]
-        ),
-        "model": transformers.AlbertForSequenceClassification.from_pretrained(
-            globals.paths["albert_imdb"]
-        ),
-    }
-    globals.models["study_screening"] = {
-        "model": SentenceTransformer(str(globals.paths["study_screening"])),
-    }
-    globals.thresholds = read_thresholds(globals.paths["thresholds"])
-    logger.info("api initialization done.")
-    yield
     globals.models.clear()
+    globals.thresholds = None
+    try:
+        if globals.load_bert_models:
+            import transformers
+            from sentence_transformers import SentenceTransformer
+
+            logger.info("api init: init models")
+            globals.models["albert-imdb"] = {
+                "tokenizer": transformers.AutoTokenizer.from_pretrained(
+                    globals.paths["albert_imdb"]
+                ),
+                "model": (
+                    transformers.AlbertForSequenceClassification.from_pretrained(
+                        globals.paths["albert_imdb"]
+                    )
+                ),
+            }
+            globals.models["study_screening"] = {
+                "model": SentenceTransformer(str(globals.paths["study_screening"])),
+            }
+            globals.thresholds = read_thresholds(globals.paths["thresholds"])
+        else:
+            logger.info("api init: local BERT models disabled")
+        logger.info("api initialization done.")
+        yield
+    finally:
+        globals.models.clear()
+        globals.thresholds = None
 
 
 app = FastAPI(title="inference-api", lifespan=lifespan)
@@ -43,6 +53,10 @@ async def root():
 
 @app.get("/check")
 async def check() -> bool:
+    """Check the assets required by the selected local-model mode."""
+    if not globals.load_bert_models:
+        return True
+
     path_exist_list = []
     for k, v in globals.paths.items():
         path_exist = v.exists()

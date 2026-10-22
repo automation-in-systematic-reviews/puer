@@ -83,8 +83,12 @@ def _payload(**overrides: Any) -> dict[str, Any]:
     return res
 
 
-def test_extraction_delegates_once_and_serializes_response(client: TestClient) -> None:
+@pytest.mark.parametrize("client_fixture", ["client", "no_bert_client"])
+def test_extraction_delegates_once_and_serializes_response(
+    request: pytest.FixtureRequest, client_fixture: str
+) -> None:
     """The strict extraction route delegates exactly once to its async service."""
+    client = request.getfixturevalue(client_fixture)
     expected = _extraction_response()
     with patch(
         "app.apis.data_extraction.extract_title_abstract",

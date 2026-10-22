@@ -301,10 +301,12 @@ def test_wrong_api_key():
         assert r.status_code == 401
 
 
+@pytest.mark.parametrize("client_fixture", ["prediction_client", "no_bert_client"])
 def test_prediction_delegates_once_and_serializes_response(
-    prediction_client: TestClient,
+    request: pytest.FixtureRequest, client_fixture: str
 ) -> None:
     """The prediction route delegates exactly once to its async service."""
+    prediction_client = request.getfixturevalue(client_fixture)
     expected = _prediction_response()
     with patch(
         "app.apis.study_screening.predict_study_screening",

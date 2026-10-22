@@ -69,7 +69,8 @@ The recipes reject an active Conda environment other than `inference-api`, an un
 
 ## Obtain required assets
 
-The API requires these paths relative to `inference-api`.
+The default full-model API launch requires these paths relative to `inference-api`.
+Skip these asset downloads when using `just run-local-no-bert`; the Python dependencies are still required.
 
 - `models/albert-base-v2-imdb/` for the debug ALBERT classifier.
 - `models/cup_multi_gpu_24_05_30/` for the legacy study-screening model.
@@ -87,7 +88,7 @@ Contact the project maintainer for the private screening model at `models/cup_mu
 
 Use [Environment variables](environment-variables.md) as the canonical reference for API keys, environment loading, native shell setup, restart behavior, and Docker forwarding.
 Use [LLM configuration](llm-configuration.md) for model and reasoning defaults, endpoint scope, provider compatibility, lazy initialization, and provenance alignment.
-For native development, export values in the shell that launches `just run-local` so the task runner and API process inherit them.
+For native development, export values in the shell that launches `just run-local` or `just run-local-no-bert` so the task runner and API process inherit them.
 Restart the API after changing an application variable.
 
 ## Offline verification
@@ -100,33 +101,49 @@ UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX" uv run --offline --locked python -m pytes
 ```
 
 Run the full offline suite with the following command.
-The full suite uses mocks for OpenAI-backed behavior and does not require or permit paid provider calls.
+The full suite mocks local models, threshold loading, and OpenAI-backed behavior and does not require or permit paid provider calls.
 
 ```sh
 UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX" uv run --offline --locked python -m pytest -vv
 ```
 
 The focused and full commands require an initialized local environment and use only locally installed locked dependencies.
-They may require the local model and threshold assets for legacy tests that start the full application lifespan.
+Neither command requires local model or threshold assets.
+The test configuration disables `.env` loading and uses synthetic API keys.
 
 ## Run the API
 
-Start the API after offline verification succeeds.
+Start the default full-model API after offline verification succeeds.
 
 ```sh
 just run-local
 ```
 
 Verify that configured model and data paths are available at `http://localhost:12306/check`.
-Open `http://localhost:12306/docs` to inspect the running API.
+
+For prompt-based development without local BERT models or threshold data, use:
+
+```sh
+just run-local-no-bert
+```
+
+This recipe retains the local port and reload behavior and skips both local model loaders and the threshold CSV.
+The startup switch is documented under `PUER_LOAD_BERT_MODELS` in [Environment variables](environment-variables.md).
+In this mode, `/debug/encode` and `/study_screening/encode` return `503`, while prompt extraction, prompt prediction, and risk-of-bias routes remain available with their normal authentication and provider configuration.
+`WCRF_API_KEY` is still required at startup; `OPENAI_API_KEY` is required only for provider-backed requests.
+The boolean `/check` response is `true` when local assets are disabled, even if their paths are absent; it does not verify provider readiness.
+Use the authenticated `/check/extraction` endpoint for local extraction-provider configuration diagnostics without a paid provider request.
+
+Both launch recipes serve `http://localhost:12306/docs` for inspecting the running API.
 Invoking a prompt-based endpoint against a configured provider is an explicit operator action and is outside the offline verification workflow.
 
 ## Troubleshooting
 
 If startup reports a missing environment variable, check [Environment variables](environment-variables.md) and the shell that launched the API.
 If an LLM request returns a configuration `503`, check [LLM configuration](llm-configuration.md) and the shell that launched the API.
-If `/check` returns `false` or model loading fails, confirm that all three required asset paths exist exactly as listed above.
-Request the private screening model or threshold data from the project maintainer when either private asset is unavailable.
+In full-model mode, if `/check` returns `false` or model loading fails, confirm that all three required asset paths exist exactly as listed above.
+Request the private screening model or threshold data from the project maintainer when either private asset is unavailable, or use `just run-local-no-bert` for prompt-based development.
+If a legacy encode route reports that local BERT models are disabled, restart with local model loading enabled and the required assets available.
 If `just` reports that no justfile or recipes are available, confirm that the current directory is `inference-api`.
 If the shell reports `just: command not found`, activate `inference-api` normally and check `$CONDA_PREFIX/bin/just`.
 Recreate the environment using the migration procedure above only if that executable remains absent.

@@ -1,4 +1,6 @@
 import asyncio
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -16,9 +18,18 @@ def test_ping():
     assert r.json() == "hello world"
 
 
-def test_check():
+@pytest.mark.parametrize("assets_exist", [True, False])
+def test_check(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, assets_exist: bool
+) -> None:
+    """Full mode reports whether every required local asset exists."""
+    paths = {name: tmp_path / name for name in main.globals.paths}
+    if assets_exist:
+        for path in paths.values():
+            path.mkdir()
+    monkeypatch.setattr(main.globals, "paths", paths)
     r = client.get("/check")
-    assert r.json() is True
+    assert r.json() is assets_exist
 
 
 def test_check_extraction_authenticated_success_has_local_diagnostics_only(
@@ -172,6 +183,7 @@ def test_check_auth_rejects_missing_or_invalid_key(
 
 def test_lifespan_does_not_log_configured_api_keys(
     capsys: pytest.CaptureFixture[str],
+    mock_bert_assets: SimpleNamespace,
 ) -> None:
     """Startup loads normal assets without emitting configured API-key values."""
     canary_key = "startup-api-key-canary"
@@ -184,17 +196,17 @@ def test_lifespan_does_not_log_configured_api_keys(
     with (
         patch.object(main.globals, "api_keys", [canary_key]),
         patch.object(
-            main.transformers.AutoTokenizer,
+            mock_bert_assets.transformers.AutoTokenizer,
             "from_pretrained",
             return_value=tokenizer,
         ) as mock_tokenizer,
         patch.object(
-            main.transformers.AlbertForSequenceClassification,
+            mock_bert_assets.transformers.AlbertForSequenceClassification,
             "from_pretrained",
             return_value=classifier,
         ) as mock_classifier,
         patch.object(
-            main,
+            mock_bert_assets.sentence_transformers,
             "SentenceTransformer",
             return_value=screening_model,
         ) as mock_screening_model,
@@ -223,6 +235,7 @@ def test_lifespan_does_not_log_configured_api_keys(
     )
     mock_read.assert_called_once_with(main.globals.paths["thresholds"])
     assert main.globals.models == {}
+    assert main.globals.thresholds is None
 
 
 async def _run_lifespan(

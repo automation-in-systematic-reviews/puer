@@ -35,7 +35,11 @@ def _empty_key_details(**overrides):
     return details
 
 
-def test_assess_pdf_returns_domain_assessments():
+@pytest.mark.parametrize("load_bert_models", [True, False])
+def test_assess_pdf_returns_domain_assessments(
+    monkeypatch: pytest.MonkeyPatch, load_bert_models: bool
+) -> None:
+    monkeypatch.setattr(globals, "load_bert_models", load_bert_models)
     with TestClient(app) as client:
         headers = {
             "Accept": "application/json",

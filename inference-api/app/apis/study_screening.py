@@ -49,6 +49,8 @@ async def post_predict(
 # @router.post("/study_screening/encode")
 @router.post("/study_screening/encode", dependencies=[Depends(api_key_auth)])
 async def post_encode(payload: PayloadModel):
+    if not globals.load_bert_models:
+        raise HTTPException(status_code=503, detail="Local BERT models are disabled.")
 
     model = globals.models["study_screening"]["model"]
 
